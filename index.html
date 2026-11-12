@@ -9390,7 +9390,7 @@ openDocFile = async function (file) {
     '<text x="17" y="25.3" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.6" font-weight="700" fill="#fff">PDF</text>' +
     '<path d="M32 29h6.5v7.5h4.5L35.25 45 27.5 36.5H32z" fill="#e3060f"/>' +
     '</svg></span>' +
-    '<span class="bl-yazi"><b>PDF_Düzenleme_Programı_V4.0</b></span>';
+    '<span class="bl-yazi"><b>PDF_Düzenleme_Programı_V4.2</b></span>';
   header.insertAdjacentHTML('beforeend',
     '<div class="bl-zoom"><button type="button" class="bl-zb" id="blKucult" title="Uzaklaştır">−</button>' +
     '<span class="bl-zv" id="blYuzde">%100</span>' +
@@ -16291,6 +16291,17 @@ function spPencere() {
      Otomatik çekimde kamera ekranında kalınır, art arda sayfa çekilir;
      aynı sayfa, çerçeveden çıkana ya da değişene kadar tekrar çekilmez.
    - Menüdeki "Belge tara" simgesi maviye çevrildi.
+
+   EK — 12.11.2026 (V4.2): Kenar yakalama baştan yazıldı (Adobe Scan gibi
+   kenar çizgilerine bakar, yalnız parlaklığa değil): Canny kenar haritası,
+   kenarlarla çevrili bölgelerin dış zarfı ve içine sığan en büyük dörtgen,
+   ayrıca kâğıdın dört kenarı düz çizgi olarak (Hough) aranır. Adaylar,
+   kenar çizgisinin sürekliliği, yönü ve iki yanı arasındaki parlaklık
+   farkıyla puanlanır; sayfa içindeki yazı/tablo satırları kenar sanılmaz.
+   Açık renkli/beyaz masa, gölge, yan ışık, 45°'ye yakın eğik tutma,
+   perspektif, elle tutulan kâğıt ve dağınık masada çok daha iyi yakalar.
+   Canlı kamerada daha sık ve daha toleranslı (el titremesine) çalışır;
+   uzun süre belge bulunamazsa ipucu verir.
    Programın kendi koduna dokunulmadı.
    ===================================================================== */
 'use strict';
@@ -16357,29 +16368,263 @@ function trDisbukey(k) {
   return true;
 }
 
-/* sayfanın kenarlarını bulur: küçük kopyada parlak (kâğıt) bölgenin en büyük
-   parçasının uç noktaları. Bulamazsa null döner. Köşeler 0..1 aralığında. */
-function trKenarBul(kaynak, enBoy) {
+const TR_SINIR_ESIK = 6, TR_KONTRAST_ESIK = 6;
+/* ---------------- kenar bulma (V4.2) ----------------
+   Adobe Scan benzeri: parlaklığa değil kenar çizgilerine bakar.
+   1) küçük gri kopya + yumuşatma, 2) Canny kenar haritası (eşikler
+   görüntüye göre kendiliğinden), 3) kenarlarla çevrili bölgeler; görüntü
+   kenarına değmeyen büyük bölgelerin dış zarfı, 4) zarfın içine sığan en
+   büyük dörtgen = sayfa, 5) her aday dörtgen kenar çizgisi desteğine göre
+   puanlanır; eski parlaklık yöntemi de aday olarak yarışır. Köşeler 0..1. */
+function trGriKopya(kaynak, enBoy) {
   const kw = kaynak.videoWidth || kaynak.naturalWidth || kaynak.width, kh = kaynak.videoHeight || kaynak.naturalHeight || kaynak.height;
-  const EN = enBoy || 360, o = Math.min(1, EN / Math.max(kw, kh));
-  const w = Math.max(8, Math.round(kw * o)), h = Math.max(8, Math.round(kh * o));
+  const o = Math.min(1, (enBoy || 420) / Math.max(kw, kh));
+  const w = Math.max(16, Math.round(kw * o)), h = Math.max(16, Math.round(kh * o));
   const c = trCanvas(w, h), cx = c.getContext('2d', { willReadFrequently: true });
   cx.drawImage(kaynak, 0, 0, w, h);
-  const d = cx.getImageData(0, 0, w, h).data, n = w * h;
-  let g = new Float32Array(n);
+  const d = cx.getImageData(0, 0, w, h).data, n = w * h, g = new Float32Array(n);
   for (let i = 0, j = 0; i < n; i++, j += 4) g[i] = d[j] * 0.299 + d[j + 1] * 0.587 + d[j + 2] * 0.114;
-  // iki kez kutu bulanıklığı
-  for (let t = 0; t < 2; t++) {
-    const y2 = new Float32Array(n);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      let s = 0, m = 0;
-      for (let dy = -2; dy <= 2; dy++) { const yy = y + dy; if (yy < 0 || yy >= h) continue; for (let dx = -2; dx <= 2; dx++) { const xx = x + dx; if (xx < 0 || xx >= w) continue; s += g[yy * w + xx]; m++; } }
-      y2[y * w + x] = s / m;
-    }
-    g = y2;
+  c.width = c.height = 0;
+  return { g, w, h };
+}
+function trBulanik(g, w, h) {
+  // 5'li Gauss, iki geçiş
+  const t = new Float32Array(w * h), o = new Float32Array(w * h), K = [1, 4, 6, 4, 1];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let s = 0, m = 0;
+    for (let k = -2; k <= 2; k++) { const xx = x + k; if (xx < 0 || xx >= w) continue; s += g[y * w + xx] * K[k + 2]; m += K[k + 2]; }
+    t[y * w + x] = s / m;
   }
-  // Otsu eşiği
-  const hist = new Array(256).fill(0);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let s = 0, m = 0;
+    for (let k = -2; k <= 2; k++) { const yy = y + k; if (yy < 0 || yy >= h) continue; s += t[yy * w + x] * K[k + 2]; m += K[k + 2]; }
+    o[y * w + x] = s / m;
+  }
+  return o;
+}
+function trCanny(g, w, h, oran) {
+  const n = w * h, mag = new Float32Array(n), yon = new Uint8Array(n), GX = new Float32Array(n), GY = new Float32Array(n);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    const gx = -g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1] + g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1];
+    const gy = -g[i - w - 1] - 2 * g[i - w] - g[i - w + 1] + g[i + w - 1] + 2 * g[i + w] + g[i + w + 1];
+    const m = Math.hypot(gx, gy); mag[i] = m; GX[i] = gx; GY[i] = gy;
+    let a = Math.atan2(gy, gx) * 180 / Math.PI; if (a < 0) a += 180;
+    yon[i] = a < 22.5 || a >= 157.5 ? 0 : a < 67.5 ? 1 : a < 112.5 ? 2 : 3;
+  }
+  // eşikler: kenar büyüklüklerinin dağılımından
+  const ornek = [];
+  for (let i = 0; i < n; i += 3) if (mag[i] > 4) ornek.push(mag[i]);
+  ornek.sort((p, q) => p - q);
+  const yuksek = Math.max(14, (ornek[Math.floor(ornek.length * 0.72)] || 40) * (oran || 1)), dusuk = yuksek * 0.42;
+  const ince = new Float32Array(n);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x, m = mag[i]; if (m < dusuk) continue;
+    let a, b;
+    switch (yon[i]) { case 0: a = mag[i - 1]; b = mag[i + 1]; break; case 1: a = mag[i - w - 1]; b = mag[i + w + 1]; break; case 2: a = mag[i - w]; b = mag[i + w]; break; default: a = mag[i - w + 1]; b = mag[i + w - 1]; }
+    if (m >= a && m >= b) ince[i] = m;
+  }
+  const kenar = new Uint8Array(n), yigin = new Int32Array(n); let sp = 0;
+  for (let i = 0; i < n; i++) if (ince[i] >= yuksek && !kenar[i]) { kenar[i] = 1; yigin[sp++] = i; }
+  while (sp) {
+    const i = yigin[--sp];
+    for (const d of [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1]) {
+      const j = i + d; if (j < 0 || j >= n || kenar[j]) continue;
+      if (ince[j] >= dusuk) { kenar[j] = 1; yigin[sp++] = j; }
+    }
+  }
+  // "sınır gibi" kenarlar: iki yanında geniş ölçekte de parlaklık farkı sürüyor (kâğıt/zemin);
+  // ince yazı çizgilerinde iki yan da kâğıttır, bunlar elenir (düz çizgi aramasında kullanılır)
+  const kenarB = new Uint8Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (!kenar[i] || !mag[i]) continue;
+    const ux = GX[i] / mag[i], uy = GY[i] / mag[i];
+    let enAzFark = 1e9, isaret = 0, tamam = true;
+    for (const r of [5, 8]) {
+      const x1 = Math.round(x + ux * r), y1 = Math.round(y + uy * r), x2 = Math.round(x - ux * r), y2 = Math.round(y - uy * r);
+      if (x1 < 0 || y1 < 0 || x1 >= w || y1 >= h || x2 < 0 || y2 < 0 || x2 >= w || y2 >= h) { tamam = false; break; }
+      const f = g[y1 * w + x1] - g[y2 * w + x2];
+      if (isaret && Math.sign(f) !== isaret) { tamam = false; break; }
+      isaret = Math.sign(f); if (Math.abs(f) < enAzFark) enAzFark = Math.abs(f);
+    }
+    if (tamam && enAzFark >= TR_SINIR_ESIK) kenarB[i] = 1;
+  }
+  return { kenar, kenarB, mag, GX, GY };
+}
+function trGenislet(a, w, h, r) {
+  if (!r) return a;
+  const t = new Uint8Array(w * h), o = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) { let son = -1e9; for (let x = 0; x < w; x++) { if (a[y * w + x]) son = x; if (x - son <= r) t[y * w + x] = 1; } son = 1e9; for (let x = w - 1; x >= 0; x--) { if (a[y * w + x]) son = x; if (son - x <= r) t[y * w + x] = 1; } }
+  for (let x = 0; x < w; x++) { let son = -1e9; for (let y = 0; y < h; y++) { if (t[y * w + x]) son = y; if (y - son <= r) o[y * w + x] = 1; } son = 1e9; for (let y = h - 1; y >= 0; y--) { if (t[y * w + x]) son = y; if (son - y <= r) o[y * w + x] = 1; } }
+  return o;
+}
+function trZarf(P) {
+  P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (P.length < 3) return P;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const alt = [], ust = [];
+  for (const p of P) { while (alt.length >= 2 && cr(alt[alt.length - 2], alt[alt.length - 1], p) <= 0) alt.pop(); alt.push(p); }
+  for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; while (ust.length >= 2 && cr(ust[ust.length - 2], ust[ust.length - 1], p) <= 0) ust.pop(); ust.push(p); }
+  ust.pop(); alt.pop();
+  return alt.concat(ust);
+}
+function trEnBuyukDortgen(Z) {
+  // dışbükey çokgenin içine sığan, köşeleri çokgen üzerinde en büyük dörtgen
+  const n = Z.length; if (n < 4) return null;
+  const A = (a, b, c) => Math.abs((Z[b % n][0] - Z[a % n][0]) * (Z[c % n][1] - Z[a % n][1]) - (Z[b % n][1] - Z[a % n][1]) * (Z[c % n][0] - Z[a % n][0])) / 2;
+  let en = -1, sonuc = null;
+  for (let i = 0; i < n; i++) {
+    let j = i + 1, l = i + 3;
+    for (let k = i + 2; k <= i + n - 2; k++) {
+      if (j >= k) j = k - 1;
+      while (j + 1 < k && A(i, j + 1, k) >= A(i, j, k)) j++;
+      if (l <= k) l = k + 1;
+      while (l + 1 < i + n && A(i, k, l + 1) >= A(i, k, l)) l++;
+      const s = A(i, j, k) + A(i, k, l);
+      if (s > en) { en = s; sonuc = [i % n, j % n, k % n, l % n]; }
+    }
+  }
+  return sonuc ? sonuc.map(t => Z[t].slice()) : null;
+}
+function trKenarDestek(k, C, w, h, g, sinir) {
+  // her kenar boyunca: yönü o kenara uyan (kenara dik eğimli) kenar pikseli var mı,
+  // ve parlaklık geçişi hep aynı yönde mi (kâğıt sınırı tutarlıdır; yazı satırı değildir)
+  const kenar = sinir ? C.kenarB : C.kenar, GX = C.GX, GY = C.GY, M = C.mag;
+  let top = 0, enAz = 1, kontrastEnAz = 1e9, kontrastEnCok = 0;
+  const cx = (k[0][0] + k[1][0] + k[2][0] + k[3][0]) / 4, cy = (k[0][1] + k[1][1] + k[2][1] + k[3][1]) / 4;
+  for (let s = 0; s < 4; s++) {
+    const a = k[s], b = k[(s + 1) % 4], N = 40;
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+    // normal içeri baksın
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+    if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }
+    let var_ = 0, isaret = 0;
+    for (let t = 1; t < N; t++) {
+      const px = a[0] + (b[0] - a[0]) * t / N, py = a[1] + (b[1] - a[1]) * t / N;
+      for (let o = -2; o <= 2; o++) {
+        const x = Math.round(px + nx * o), y = Math.round(py + ny * o);
+        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        const i = y * w + x; if (!kenar[i] || !M[i]) continue;
+        const d = (GX[i] * nx + GY[i] * ny) / M[i];
+        if (Math.abs(d) > 0.82) { var_++; isaret += d > 0 ? 1 : -1; break; }
+      }
+    }
+    const oran = var_ / (N - 1), tutarli = var_ ? Math.abs(isaret) / var_ : 0;
+    // kenarın iki yanı arasındaki parlaklık farkı: kâğıt sınırında belirgindir,
+    // sayfa içindeki yazı/tablo satırında iki yan da kâğıttır, fark çıkmaz
+    let ic = 0, dis = 0, m = 0;
+    if (g) for (let t = 1; t < 24; t++) {
+      const px = a[0] + (b[0] - a[0]) * t / 24, py = a[1] + (b[1] - a[1]) * t / 24;
+      const xi = Math.round(px + nx * 5), yi = Math.round(py + ny * 5), xo = Math.round(px - nx * 5), yo = Math.round(py - ny * 5);
+      if (xi < 0 || yi < 0 || xi >= w || yi >= h || xo < 0 || yo < 0 || xo >= w || yo >= h) continue;
+      ic += g[yi * w + xi]; dis += g[yo * w + xo]; m++;
+    }
+    const fark = m ? Math.abs(ic - dis) / m : 30;
+    if (fark < kontrastEnAz) kontrastEnAz = fark;
+    if (fark > kontrastEnCok) kontrastEnCok = fark;
+    const o = oran * (0.4 + 0.6 * tutarli) * Math.min(1, fark / 18);
+    top += o; if (o < enAz) enAz = o;
+  }
+  return { ort: top / 4, enAz, kontrast: kontrastEnAz, kontrastEnCok };
+}
+function trAciOk(k) {
+  for (let i = 0; i < 4; i++) {
+    const a = k[(i + 3) % 4], b = k[i], c = k[(i + 1) % 4];
+    const v1 = [a[0] - b[0], a[1] - b[1]], v2 = [c[0] - b[0], c[1] - b[1]];
+    const cs = (v1[0] * v2[0] + v1[1] * v2[1]) / (Math.hypot(v1[0], v1[1]) * Math.hypot(v2[0], v2[1]) || 1);
+    const aci = Math.acos(Math.max(-1, Math.min(1, cs))) * 180 / Math.PI;
+    if (aci < 50 || aci > 130) return false;
+  }
+  // kenar uzunlukları birbirine çok aykırı olmasın
+  const L = i => Math.hypot(k[i][0] - k[(i + 1) % 4][0], k[i][1] - k[(i + 1) % 4][1]);
+  if (Math.min(L(0), L(2)) / Math.max(L(0), L(2)) < 0.45 || Math.min(L(1), L(3)) / Math.max(L(1), L(3)) < 0.45) return false;
+  return true;
+}
+/* kenarlarla çevrili bölgelerden aday dörtgenler */
+function trBolgeAdaylari(kenarG, w, h, r) {
+  const n = w * h, et = new Int32Array(n).fill(-1), yigin = new Int32Array(n);
+  const bolgeler = [];
+  for (let i = 0; i < n; i++) {
+    if (kenarG[i] || et[i] >= 0) continue;
+    const no = bolgeler.length; let sp = 0, boy = 0, degiyor = false;
+    const solX = new Int32Array(h).fill(w), sagX = new Int32Array(h).fill(-1);
+    yigin[sp++] = i; et[i] = no;
+    while (sp) {
+      const p = yigin[--sp]; boy++;
+      const x = p % w, y = (p / w) | 0;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) degiyor = true;
+      if (x < solX[y]) solX[y] = x; if (x > sagX[y]) sagX[y] = x;
+      if (x > 0 && !kenarG[p - 1] && et[p - 1] < 0) { et[p - 1] = no; yigin[sp++] = p - 1; }
+      if (x < w - 1 && !kenarG[p + 1] && et[p + 1] < 0) { et[p + 1] = no; yigin[sp++] = p + 1; }
+      if (y > 0 && !kenarG[p - w] && et[p - w] < 0) { et[p - w] = no; yigin[sp++] = p - w; }
+      if (y < h - 1 && !kenarG[p + w] && et[p + w] < 0) { et[p + w] = no; yigin[sp++] = p + w; }
+    }
+    bolgeler.push({ boy, degiyor, solX, sagX });
+  }
+  const adaylar = bolgeler.filter(b => !b.degiyor && b.boy > n * 0.025).sort((a, b) => b.boy - a.boy).slice(0, 8);
+  const sonuc = [];
+  for (const b of adaylar) {
+    const P = [];
+    for (let y = 0; y < h; y++) if (b.sagX[y] >= 0) { P.push([b.solX[y] - r - 0.5, y]); P.push([b.sagX[y] + r + 0.5, y]); }
+    if (P.length < 8) continue;
+    // üst ve alt sıralar genişletme payı kadar dışarı
+    const Z = trZarf(P);
+    const q = trEnBuyukDortgen(Z);
+    if (!q) continue;
+    const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+    const k = q.map(p => { const dx = p[0] - cx, dy = p[1] - cy, L = Math.hypot(dx, dy) || 1; return [p[0] + dx / L * r * 0.7, p[1] + dy / L * r * 1.0]; });
+    sonuc.push(k);
+  }
+  return sonuc;
+}
+function trKenarBul(kaynak, enBoy, onceki) {
+  const G = trGriKopya(kaynak, enBoy || 420), w = G.w, h = G.h;
+  const g = trBulanik(G.g, w, h);
+  const adaylar = [];
+  for (const oran of [1, 0.6]) {
+    const C = trCanny(g, w, h, oran);
+    const destekHarita = C;
+    for (const r of [1, 2, 3]) {
+      const kg = trGenislet(C.kenar, w, h, r);
+      for (const q of trBolgeAdaylari(kg, w, h, r)) adaylar.push({ q, destekHarita, tur: 'bolge' });
+    }
+    const eski = trKenarBulParlak(g, w, h);
+    if (eski) adaylar.push({ q: eski, destekHarita, tur: 'parlak' });
+    for (const q of trHoughAdaylari(C.kenarB, w, h, enBoy && enBoy < 360 ? 14 : 20)) adaylar.push({ q, destekHarita, tur: 'hough' });
+    // değerlendir
+    const gecerli = [];
+    for (const a of adaylar) {
+      const k = trSirala(a.q.map(p => [Math.min(w, Math.max(0, p[0])), Math.min(h, Math.max(0, p[1]))]));
+      const kn = k.map(p => [p[0] / w, p[1] / h]);
+      if (!trDisbukey(kn)) continue;
+      const alan = trAlan(kn);
+      if (alan < 0.1 || alan > 0.985 || !trAciOk(k)) continue;
+      const cizgi = a.tur === 'hough';
+      const d = trKenarDestek(k, a.destekHarita, w, h, cizgi ? g : null, cizgi);
+      if (d.enAz < 0.3 || d.ort < 0.5 || (cizgi && d.kontrast < TR_KONTRAST_ESIK)) continue;
+
+      let puan = d.ort * 0.6 + d.enAz * 0.4 + Math.sqrt(alan) * 0.35;
+      // canlı kamerada: bir önceki karede bulunana yakın aday biraz öne geçer (çerçeve iki aday arasında zıplamasın)
+      if (onceki) { const u = Math.max.apply(null, kn.map((p, i) => Math.hypot(p[0] - onceki[i][0], p[1] - onceki[i][1]))); if (u < 0.06) puan += 0.12 * (1 - u / 0.06); }
+      gecerli.push({ puan, kn, alan });
+    }
+    // sayfa, geçerli adayların en dışındakidir: başka geçerli bir adayın içinde kalan
+    // (yazı/tablo satırına oturmuş) daha küçük aday geri düşer
+    const icinde = (p, q) => { let s0 = 0; for (let i = 0; i < 4; i++) { const a = q[i], b = q[(i + 1) % 4]; const z = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]); const sg = z > 0.0004 ? 1 : z < -0.0004 ? -1 : 0; if (!sg) continue; if (!s0) s0 = sg; else if (sg !== s0) return false; } return true; };
+    for (const a of gecerli) for (const b of gecerli) {
+      if (a === b || b.alan < a.alan * 1.15) continue;
+      if (a.kn.filter(p => icinde(p, b.kn)).length >= 3) { a.puan -= 0.15; break; }
+    }
+    let en = null; for (const a of gecerli) if (!en || a.puan > en.puan) en = a;
+    if (en) return en.kn;
+    adaylar.length = 0;
+  }
+  return null;
+}
+/* eski yöntem (koyu zeminde açık kâğıt): parlak bölgenin uç noktaları; piksel olarak döner */
+function trKenarBulParlak(g, w, h) {
+  const n = w * h, hist = new Array(256).fill(0);
   for (let i = 0; i < n; i++) hist[Math.min(255, g[i] | 0)]++;
   let top = 0; for (let i = 0; i < 256; i++) top += i * hist[i];
   let sB = 0, wB = 0, enIyi = 0, esik = 128;
@@ -16390,41 +16635,78 @@ function trKenarBul(kaynak, enBoy) {
     const mB = sB / wB, mF = (top - sB) / wF, ara = wB * wF * (mB - mF) * (mB - mF);
     if (ara > enIyi) { enIyi = ara; esik = i; }
   }
-  const mask = new Uint8Array(n);
-  for (let i = 0; i < n; i++) mask[i] = g[i] > esik ? 1 : 0;
-  // en büyük parlak parça
-  const etiket = new Int32Array(n).fill(-1);
-  let enBuyuk = -1, enBuyukBoy = 0;
-  const yigin = new Int32Array(n);
+  const mask = new Uint8Array(n); for (let i = 0; i < n; i++) mask[i] = g[i] > esik ? 1 : 0;
+  const et = new Int32Array(n).fill(-1), yigin = new Int32Array(n);
+  let enB = -1, enBoy = 0;
   for (let i = 0; i < n; i++) {
-    if (!mask[i] || etiket[i] >= 0) continue;
-    let sp = 0, boy = 0; yigin[sp++] = i; etiket[i] = i;
+    if (!mask[i] || et[i] >= 0) continue;
+    let sp = 0, boy = 0; yigin[sp++] = i; et[i] = i;
     while (sp) {
       const p = yigin[--sp]; boy++;
       const x = p % w, y = (p / w) | 0;
-      if (x > 0 && mask[p - 1] && etiket[p - 1] < 0) { etiket[p - 1] = i; yigin[sp++] = p - 1; }
-      if (x < w - 1 && mask[p + 1] && etiket[p + 1] < 0) { etiket[p + 1] = i; yigin[sp++] = p + 1; }
-      if (y > 0 && mask[p - w] && etiket[p - w] < 0) { etiket[p - w] = i; yigin[sp++] = p - w; }
-      if (y < h - 1 && mask[p + w] && etiket[p + w] < 0) { etiket[p + w] = i; yigin[sp++] = p + w; }
+      if (x > 0 && mask[p - 1] && et[p - 1] < 0) { et[p - 1] = i; yigin[sp++] = p - 1; }
+      if (x < w - 1 && mask[p + 1] && et[p + 1] < 0) { et[p + 1] = i; yigin[sp++] = p + 1; }
+      if (y > 0 && mask[p - w] && et[p - w] < 0) { et[p - w] = i; yigin[sp++] = p - w; }
+      if (y < h - 1 && mask[p + w] && et[p + w] < 0) { et[p + w] = i; yigin[sp++] = p + w; }
     }
-    if (boy > enBuyukBoy) { enBuyukBoy = boy; enBuyuk = i; }
+    if (boy > enBoy) { enBoy = boy; enB = i; }
   }
-  if (enBuyuk < 0) return null;
-  const oran = enBuyukBoy / n;
-  if (oran < 0.12 || oran > 0.97) return null;
-  let tl = null, tr = null, br = null, bl = null, sMin = 1e9, sMax = -1e9, dMin = 1e9, dMax = -1e9;
-  for (let p = 0; p < n; p++) {
-    if (etiket[p] !== enBuyuk) continue;
-    const x = p % w, y = (p / w) | 0, s = x + y, df = x - y;
-    if (s < sMin) { sMin = s; tl = [x, y]; }
-    if (s > sMax) { sMax = s; br = [x, y]; }
-    if (df > dMax) { dMax = df; tr = [x, y]; }
-    if (df < dMin) { dMin = df; bl = [x, y]; }
-  }
-  const k = [tl, tr, br, bl].map(q => [(q[0] + 0.5) / w, (q[1] + 0.5) / h]);
-  if (!trDisbukey(k) || trAlan(k) < 0.12) return null;
-  return k;
+  if (enB < 0 || enBoy / n < 0.1 || enBoy / n > 0.97) return null;
+  const P = [];
+  for (let y = 0; y < h; y++) { let a = -1, b = -1; for (let x = 0; x < w; x++) if (et[y * w + x] === enB) { if (a < 0) a = x; b = x; } if (a >= 0) { P.push([a, y]); P.push([b + 1, y]); } }
+  const Z = trZarf(P);
+  return trEnBuyukDortgen(Z);
 }
+/* düz çizgi (Hough) adayları: kâğıdın dört kenarı çizgi olarak bulunur, kesişimleri köşe olur.
+   Kâğıdın bir köşesi elle, başka bir kâğıtla örtülse de kenar çizgileri yeterlidir. */
+function trHoughAdaylari(kenar, w, h, enCok) {
+  const A = 180, diag = Math.ceil(Math.hypot(w, h)), R = 2 * diag + 1;
+  const acc = new Uint16Array(A * R), cs = new Float32Array(A), sn = new Float32Array(A);
+  for (let t = 0; t < A; t++) { cs[t] = Math.cos(t * Math.PI / 180); sn[t] = Math.sin(t * Math.PI / 180); }
+  let sayi = 0; for (let i = 0; i < w * h; i++) if (kenar[i]) sayi++;
+  const adim = sayi > 24000 ? 2 : 1;
+  let say = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!kenar[y * w + x]) continue;
+    if (adim > 1 && (say++ % adim)) continue;
+    for (let t = 0; t < A; t++) acc[t * R + Math.round(x * cs[t] + y * sn[t]) + diag]++;
+  }
+  const esik = Math.max(12, Math.min(w, h) * 0.16 / adim);
+  const tepe = [];
+  for (let t = 0; t < A; t++) for (let r = 0; r < R; r++) {
+    const v = acc[t * R + r]; if (v < esik) continue;
+    let enBuyuk = true;
+    for (let dt = -5; dt <= 5 && enBuyuk; dt++) {
+      let tt = t + dt, rr0 = r; if (tt < 0) { tt += A; rr0 = R - 1 - r; } else if (tt >= A) { tt -= A; rr0 = R - 1 - r; }
+      for (let dr = -7; dr <= 7; dr++) {
+        const rr = rr0 + dr; if (rr < 0 || rr >= R || (dt === 0 && dr === 0)) continue;
+        const u = acc[tt * R + rr]; if (u > v || (u === v && (dt < 0 || (dt === 0 && dr < 0)))) { enBuyuk = false; break; }
+      }
+    }
+    if (enBuyuk) tepe.push({ t, r: r - diag, v });
+  }
+  tepe.sort((a, b) => b.v - a.v);
+  const L = tepe.slice(0, enCok || 20);
+  const kes = (a, b) => {
+    const d = cs[a.t] * sn[b.t] - sn[a.t] * cs[b.t]; if (Math.abs(d) < 1e-6) return null;
+    return [(a.r * sn[b.t] - b.r * sn[a.t]) / d, (b.r * cs[a.t] - a.r * cs[b.t]) / d];
+  };
+  const aciFark = (a, b) => { const d = Math.abs(a.t - b.t) % 180; return Math.min(d, 180 - d); };
+  const ciftler = [];
+  for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++)
+    if (aciFark(L[i], L[j]) < 22 && Math.abs(Math.abs(L[i].r) - Math.abs(L[j].r)) > Math.min(w, h) * 0.12 || (aciFark(L[i], L[j]) < 22 && Math.sign(L[i].r) !== Math.sign(L[j].r)))
+      ciftler.push([L[i], L[j]]);
+  const sonuc = [], pay = Math.max(w, h) * 0.03;
+  for (let i = 0; i < ciftler.length; i++) for (let j = i + 1; j < ciftler.length; j++) {
+    const [a, b] = ciftler[i], [c, d] = ciftler[j];
+    const f = aciFark(a, c); if (f < 55 || f > 125) continue;
+    const k = [kes(a, c), kes(c, b), kes(b, d), kes(d, a)];
+    if (k.some(p => !p || p[0] < -pay || p[1] < -pay || p[0] > w + pay || p[1] > h + pay)) continue;
+    sonuc.push(k);
+  }
+  return sonuc;
+}
+
 
 /* ---------------- düzleştirme ---------------- */
 function trHomografi(hedef, kaynak) {
@@ -16689,7 +16971,7 @@ async function trCekCanli(oto) {
   const cx = c.getContext('2d'); cx.imageSmoothingQuality = 'high';
   cx.drawImage(v, 0, 0, c.width, c.height);
   const flas = document.querySelector('#trFlas'); if (flas) { flas.classList.remove('on'); void flas.offsetWidth; flas.classList.add('on'); }
-  OTO.bekle = true; OTO.iz = trIz(v); OTO.sabit = 0;
+  OTO.bekle = true; OTO.iz = trIz(v); OTO.izBas = performance.now(); OTO.farkSay = 0; OTO.sabit = 0;
   const yedek = OTO.kose ? OTO.kose.map(q => q.slice()) : null;
   const yerine = TR.yenile; TR.yenile = -1;
   if (oto && yerine < 0) {
@@ -16731,32 +17013,56 @@ function trCanliDongu() {
   if (!trKutu || trKutu.hidden || TR.ekran !== 'kamera' || !TR.akis) { trCanliCiz(null); return; }
   const v = trKutu.querySelector('#trVideo');
   if (v.videoWidth && v.readyState >= 2) {
-    let k = null; try { k = trKenarBul(v, 300); } catch (e) { k = null; }
-    const simdi = performance.now();
-    if (k) {
+    const t0 = performance.now();
+    let k = null; try { k = trKenarBul(v, 340, OTO.ham || OTO.kose); } catch (e) { k = null; }
+    const simdi = performance.now(); TR.canliSure = simdi - t0;
+    if (k) TR.sonBulma = simdi; else if (!TR.sonBulma) TR.sonBulma = simdi;
+    // aykırı kare: oturmuş çerçeveden birden çok uzak bir bulgu hemen kabul edilmez; art arda
+    // birkaç karede sürerse (ya da daha büyük bir dörtgense, yani gerçek sayfa olabilirse) geçilir
+    if (k && OTO.ham) {
+      const u = Math.max.apply(null, k.map((q, i) => Math.hypot(q[0] - OTO.ham[i][0], q[1] - OTO.ham[i][1])));
+      if (u > 0.06) {
+        const buyuk = trAlan(k) > trAlan(OTO.ham) * 1.1;
+        OTO.aykiri = (OTO.aykiri || 0) + 1;
+        if (OTO.aykiri < (buyuk ? 2 : 4)) k = 'atla';
+      } else OTO.aykiri = 0;
+    }
+    if (k === 'atla') {
+      // bu kare yok sayılır: ne sabitlik bozulur ne çerçeve kaçar
+    } else if (k) {
+      OTO.aykiri = 0;
       const hareket = OTO.ham ? Math.max.apply(null, k.map((q, i) => Math.hypot(q[0] - OTO.ham[i][0], q[1] - OTO.ham[i][1]))) : 1;
       OTO.ham = k; OTO.kayip = 0;
       OTO.kose = OTO.kose ? OTO.kose.map((q, i) => [q[0] * 0.55 + k[i][0] * 0.45, q[1] * 0.55 + k[i][1] * 0.45]) : k;
-      if (hareket < 0.02) { if (!OTO.sabit) OTO.sabit = simdi; } else OTO.sabit = 0;
+      if (hareket < 0.028) { if (!OTO.sabit) OTO.sabit = simdi; } else OTO.sabit = 0;
     } else {
-      OTO.kayip++; OTO.sabit = 0; OTO.ham = null;
+      // tek karelik kaçırma sabitliği bozmasın (zor zeminde bazı kareler bulunamayabilir)
+      OTO.kayip++;
+      if (OTO.kayip >= 2) { OTO.sabit = 0; OTO.ham = null; }
       if (OTO.kayip >= 3) OTO.kose = null;
     }
     // aynı sayfa ikinci kez çekilmesin: sayfa çerçeveden çıkana ya da değişene kadar beklenir
     if (OTO.bekle) {
       if (OTO.kayip >= 3) OTO.bekle = false;
-      else if (OTO.iz) { const iz = trIz(v); if (iz && trIzFark(iz, OTO.iz) > 12) OTO.bekle = false; }
+      else {
+        const iz = trIz(v);
+        // çekimden hemen sonraki kısa sürede görüntü oturana kadar kıyas izi tazelenir;
+        // sonra görüntü art arda birkaç karede belirgin değişirse (yeni sayfa) beklemeden çıkılır
+        if (simdi - (OTO.izBas || 0) < 700) OTO.iz = iz || OTO.iz;
+        else if (iz && OTO.iz) { OTO.farkSay = trIzFark(iz, OTO.iz) > 12 ? (OTO.farkSay || 0) + 1 : 0; if (OTO.farkSay >= 3) OTO.bekle = false; }
+      }
     }
     const sure = OTO.sabit ? simdi - OTO.sabit : 0;
     trCanliCiz(OTO.kose, OTO.acik && !OTO.bekle && sure > 450);
-    trIpucu(!OTO.kose ? 'Belge aranıyor…' : OTO.bekle ? 'Sonraki sayfayı yerleştirin' :
+    trIpucu(!OTO.kose ? (simdi - TR.sonBulma > 4000 ? 'Dört köşe görünsün; mümkünse koyu bir zemine koyun' : 'Belge aranıyor…') : OTO.bekle ? 'Sonraki sayfayı yerleştirin' :
       OTO.acik ? (sure > 450 ? 'Sabit tutun, çekiliyor…' : 'Belge bulundu, sabit tutun') : 'Belge bulundu, Çek\'e dokunun');
-    if (OTO.acik && !OTO.bekle && !OTO.cekiliyor && OTO.kose && sure > 1100 && TR.sayfalar.length < TR.EN_COK) {
+    if (OTO.acik && !OTO.bekle && !OTO.cekiliyor && OTO.kose && sure > 1000 && TR.sayfalar.length < TR.EN_COK) {
       OTO.cekiliyor = true;
       trCekCanli(true).catch(() => { }).then(() => { OTO.cekiliyor = false; });
     }
   }
-  TR.canliT = setTimeout(trCanliDongu, 120);
+  // yavaş telefonda işlemciyi boğmamak için bekleme, bulma süresine göre uzar
+  TR.canliT = setTimeout(trCanliDongu, Math.max(110, Math.min(400, (TR.canliSure || 0) * 1.6)));
 }
 function trOtoBoya() {
   const b = trKutu && trKutu.querySelector('#trOtoDug'); if (!b) return;
@@ -16969,7 +17275,7 @@ function trEkran(ad) {
   if (ad === 'kamera' && TR.akis) {
     if (v.srcObject !== TR.akis) v.srcObject = TR.akis;
     v.play().catch(() => { });
-    OTO.kose = null; OTO.ham = null; OTO.sabit = 0; OTO.kayip = 0;
+    OTO.kose = null; OTO.ham = null; OTO.sabit = 0; OTO.kayip = 0; OTO.aykiri = 0; TR.sonBulma = 0;
     trCanliDongu();
   } else if (v && !v.paused) v.pause();
   if (ad !== 'kamera') trCanliCiz(null);
@@ -17264,6 +17570,58 @@ function trKapat(kesin) {
   for (const el of panel.children) { const ad = el.querySelector && el.querySelector('.mn-ad'); if (ad && ad.textContent === 'PDF oluştur') once = el; }
   if (once && once.nextSibling) panel.insertBefore(oge, once.nextSibling);
   else panel.appendChild(oge);
+})();
+
+</script>
+<script>
+/* =====================================================================
+   SOL ALT TELİF İMZASI YAMASI — 12.11.2026 (V4.1)
+   Telif imzası sol menünün en altına (programın sol alt köşesi) alındı:
+     © 2026 — Bu programın telif hakları Abdullah GEDİK'e aittir.
+     İzinsiz çoğaltılamaz, satılamaz; yapımcı bilgisi silinerek başkasına
+     mal edilemez.
+     İletişim: 0 505 640 51 80   (telefonda dokununca arar)
+     Sürüm (başlıktaki sürüm) — (sürüm tarihi)
+   İmza programa gömülüdür. Sol menü açıkken orada durur ve alttaki durum
+   çubuğundaki telif yazısı gizlenir; menü daraltılınca ya da telefonda
+   (menü gizli olduğu için) imza eskisi gibi alttaki durum çubuğunda görünür,
+   böylece her zaman ekranda kalır. Yazdırmada görünmez.
+   Programın kendi koduna dokunulmadı.
+   ===================================================================== */
+'use strict';
+
+(function tsKur() {
+  const nav = document.getElementById('agac');
+  if (!nav) return;
+  const baslik = document.querySelector('header .bl-yazi b');
+  const surum = ((baslik && baslik.textContent) || '').match(/V\d+(\.\d+)*$/i);
+  const tarih = (typeof TL_TARIH !== 'undefined') ? TL_TARIH : '';
+  const el = document.createElement('div');
+  el.id = 'tlSol';
+  el.innerHTML =
+    '<div class="ts-1">© 2026 — Bu programın telif hakları <b>Abdullah GEDİK</b>\'e aittir.</div>' +
+    '<div class="ts-2">İzinsiz çoğaltılamaz, satılamaz; yapımcı bilgisi silinerek başkasına mal edilemez.</div>' +
+    '<div class="ts-3">İletişim: <a href="tel:05056405180">0 505 640 51 80</a></div>' +
+    '<div class="ts-4">Sürüm ' + (surum ? surum[0].toUpperCase() : '') + (tarih ? ' — ' + tarih : '') + '</div>';
+  nav.appendChild(el);
+
+  const st = document.createElement('style');
+  st.textContent =
+    /* menü sütun olur, imza en alta oturur; içerik uzunsa kaydırınca en sonda görünür */
+    '#agac.mn{display:flex;flex-direction:column}' +
+    '#agac.mn>*{flex-shrink:0}' +
+    '#tlSol{display:none;margin-top:auto;padding:14px 14px 16px;border-top:1px solid #eceef1;text-align:center;line-height:1.45;user-select:text;-webkit-user-select:text}' +
+    '#tlSol .ts-1{font-size:12.5px;color:#1f2937}' +
+    '#tlSol .ts-1 b{color:#111827;font-weight:700}' +
+    '#tlSol .ts-2{font-size:11px;color:#6b7280;margin-top:3px}' +
+    '#tlSol .ts-3{font-size:12.5px;color:#1f2937;margin-top:5px}' +
+    '#tlSol .ts-3 a{color:#0b7a43;font-weight:700;text-decoration:none;border-bottom:2px solid #0b7a43;padding-bottom:1px;letter-spacing:.3px}' +
+    '#tlSol .ts-4{font-size:10.5px;color:#9ca3af;margin-top:6px}' +
+    /* sol menü görünürken imza solda, alttaki telif gizli */
+    'body:not(.ag-dar):not(.mb-telefon) #tlSol{display:block}' +
+    'body:not(.ag-dar):not(.mb-telefon) footer #telif{display:none}' +
+    '@media print{#tlSol{display:none !important}}';
+  document.head.appendChild(st);
 })();
 
 </script>
