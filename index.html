@@ -9390,7 +9390,7 @@ openDocFile = async function (file) {
     '<text x="17" y="25.3" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.6" font-weight="700" fill="#fff">PDF</text>' +
     '<path d="M32 29h6.5v7.5h4.5L35.25 45 27.5 36.5H32z" fill="#e3060f"/>' +
     '</svg></span>' +
-    '<span class="bl-yazi"><b>PDF_Düzenleme_Programı_V3.9</b></span>';
+    '<span class="bl-yazi"><b>PDF_Düzenleme_Programı_V4.0</b></span>';
   header.insertAdjacentHTML('beforeend',
     '<div class="bl-zoom"><button type="button" class="bl-zb" id="blKucult" title="Uzaklaştır">−</button>' +
     '<span class="bl-zv" id="blYuzde">%100</span>' +
@@ -16277,6 +16277,20 @@ function spPencere() {
    - Her sayfa yeniden JPEG kodlanır, belge bilgileri boş, dosya adı
      Türkçe harfsiz: kurum sistemlerine (HYS vb.) uygun çıkar.
    Hiçbir görüntü dışarı gönderilmez; her şey cihazda kalır.
+
+   EK — 12.11.2026 (V4.0):
+   - Kamera açılışı sağlamlaştırıldı: telefon yüksek çözünürlük isteğini
+     reddederse daha sade isteklerle yeniden denenir. Açılamazsa sebebi
+     ekrana yazılır (izin verilmedi / uygulama içi tarayıcı / kamera meşgul)
+     ve nereden izin verileceği söylenir; "Kamerayı aç" ile yeniden denenir.
+   - Canlı kamera bu sayfada hiç mümkün değilse Belge tara'ya basınca ara
+     ekran beklemeden telefonun kendi kamerası açılır.
+   - Canlı kenar yakalama: kamera belgeye tutulunca kenarlar mavi çerçeveyle
+     anlık gösterilir; sabit tutulunca çerçeve yeşile döner ve kendiliğinden
+     çeker (Otomatik çekim: Açık/Kapalı düğmesi, seçim tarayıcıda saklanır).
+     Otomatik çekimde kamera ekranında kalınır, art arda sayfa çekilir;
+     aynı sayfa, çerçeveden çıkana ya da değişene kadar tekrar çekilmez.
+   - Menüdeki "Belge tara" simgesi maviye çevrildi.
    Programın kendi koduna dokunulmadı.
    ===================================================================== */
 'use strict';
@@ -16345,9 +16359,10 @@ function trDisbukey(k) {
 
 /* sayfanın kenarlarını bulur: küçük kopyada parlak (kâğıt) bölgenin en büyük
    parçasının uç noktaları. Bulamazsa null döner. Köşeler 0..1 aralığında. */
-function trKenarBul(kaynak) {
-  const EN = 360, o = Math.min(1, EN / Math.max(kaynak.width, kaynak.height));
-  const w = Math.max(8, Math.round(kaynak.width * o)), h = Math.max(8, Math.round(kaynak.height * o));
+function trKenarBul(kaynak, enBoy) {
+  const kw = kaynak.videoWidth || kaynak.naturalWidth || kaynak.width, kh = kaynak.videoHeight || kaynak.naturalHeight || kaynak.height;
+  const EN = enBoy || 360, o = Math.min(1, EN / Math.max(kw, kh));
+  const w = Math.max(8, Math.round(kw * o)), h = Math.max(8, Math.round(kh * o));
   const c = trCanvas(w, h), cx = c.getContext('2d', { willReadFrequently: true });
   cx.drawImage(kaynak, 0, 0, w, h);
   const d = cx.getImageData(0, 0, w, h).data, n = w * h;
@@ -16581,7 +16596,7 @@ async function trIsle(sf) {
 }
 
 /* fotoğrafı (Blob/File ya da canvas) sayfa olarak alır */
-async function trFotoAl(kaynak, yerine) {
+async function trFotoAl(kaynak, yerine, yedekKose) {
   let c;
   if (kaynak instanceof HTMLCanvasElement) c = kaynak;
   else {
@@ -16591,7 +16606,7 @@ async function trFotoAl(kaynak, yerine) {
     const cx = c.getContext('2d'); cx.imageSmoothingQuality = 'high';
     cx.drawImage(im, 0, 0, c.width, c.height);
   }
-  const bulunan = trKenarBul(c);
+  const bulunan = trKenarBul(c) || (yedekKose && trDisbukey(yedekKose) ? yedekKose : null);
   const kaynakBlob = await trBlob(c, 0.92);
   const sf = { kaynak: kaynakBlob, kw: c.width, kh: c.height, kose: bulunan || trTamKose(0), otomatik: !!bulunan, filtre: TR.filtre };
   c.width = c.height = 0;
@@ -16605,16 +16620,54 @@ async function trFotoAl(kaynak, yerine) {
 }
 
 /* ---------------- kamera ---------------- */
+function trCanliMumkun() {
+  return window.isSecureContext !== false && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+function trAkisCanli() { return !!(TR.akis && TR.akis.getVideoTracks().some(t => t.readyState === 'live')); }
 async function trKameraAc() {
-  if (TR.akis) return true;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { TR.kameraYok = true; return false; }
-  try {
-    TR.akis = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } }
-    });
-    return true;
-  } catch (e) { TR.akis = null; TR.kameraYok = true; return false; }
+  if (trAkisCanli()) return true;
+  TR.akis = null;
+  if (!trCanliMumkun()) { TR.kameraYok = true; TR.kameraHata = 'yok'; return false; }
+  // bazı telefonlar yüksek çözünürlük isteğini reddeder: sırayla daha sade isteklerle denenir
+  const denemeler = [
+    { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 1440 } },
+    { facingMode: { ideal: 'environment' } },
+    true
+  ];
+  let son = null;
+  for (const v of denemeler) {
+    try {
+      TR.akis = await navigator.mediaDevices.getUserMedia({ audio: false, video: v });
+      TR.kameraYok = false; TR.kameraHata = '';
+      return true;
+    } catch (e) {
+      son = e;
+      if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'PermissionDeniedError')) break;
+    }
+  }
+  TR.akis = null; TR.kameraYok = true;
+  TR.kameraHata = (son && son.name) || 'bilinmiyor';
+  return false;
+}
+/* canlı kamera açılamadıysa sebebi ve ne yapılacağı */
+function trKameraYokYaz() {
+  const e = trKutu.querySelector('#trKameraYok'), h = TR.kameraHata || '';
+  let m;
+  if (h === 'NotAllowedError' || h === 'SecurityError' || h === 'PermissionDeniedError')
+    m = '<b>Kamera izni verilmedi.</b><br>iPhone: <b>Ayarlar › Safari › Kamera › İzin Ver</b> ya da Safari\'de adres çubuğundaki <b>aA › Web Sitesi Ayarları › Kamera</b>. ' +
+      'Android: Chrome\'da adres çubuğundaki <b>kilit › İzinler › Kamera</b>. Ana ekrana eklenen simgeden açtıysanız bir de Safari/Chrome\'dan açmayı deneyin.';
+  else if (h === 'yok')
+    m = '<b>Bu sayfa canlı kameraya izin vermeyen bir yerde açıldı.</b><br>Programı Safari ya da Chrome\'da https adresinden (GitHub Pages) açın; başka bir uygulamanın içinden açılan sayfada canlı kamera çalışmaz.';
+  else if (h === 'NotReadableError' || h === 'AbortError' || h === 'TrackStartError')
+    m = '<b>Kamera şu an kullanılamıyor.</b><br>Kamerayı kullanan başka bir uygulama açıksa kapatıp tekrar deneyin.';
+  else if (h === 'NotFoundError' || h === 'OverconstrainedError' || h === 'DevicesNotFoundError')
+    m = '<b>Kamera bulunamadı.</b>';
+  else m = '<b>Canlı kamera açılamadı.</b>';
+  e.innerHTML = trSvg(TR_IK.kamera) + '<p>' + m + '</p>' +
+    '<p class="tr-kucukyazi">Yine de <b>Çek</b>\'e dokunursanız telefonun kendi kamerası açılır.' + (h && h !== 'yok' ? ' (' + h + ')' : '') + '</p>' +
+    (h !== 'yok' ? '<button type="button" class="tr-ikincil tr-tekrar" id="trTekrarDene">Kamerayı aç</button>' : '');
+  const b = e.querySelector('#trTekrarDene');
+  if (b) b.addEventListener('click', () => { TR.kameraYok = false; trKameraEkrani(); });
 }
 function trKameraKapat() {
   if (TR.akis) { for (const t of TR.akis.getTracks()) { try { t.stop(); } catch (e) { } } }
@@ -16624,15 +16677,92 @@ function trKameraKapat() {
 async function trCek() {
   const v = document.querySelector('#trVideo');
   if (!TR.akis || !v || !v.videoWidth) { document.querySelector('#trDosyaKamera').click(); return; }
+  await trCekCanli(false);
+}
+/* canlı görüntüden çeker. otomatik çekimde kamera ekranında kalınır (art arda
+   sayfa çekilsin diye); elle çekimde ya da "yeniden çek"te düzen ekranına geçilir */
+async function trCekCanli(oto) {
+  const v = document.querySelector('#trVideo');
+  if (!v || !v.videoWidth) return;
   const o = Math.min(1, TR.KAYNAK_EN / Math.max(v.videoWidth, v.videoHeight));
   const c = trCanvas(v.videoWidth * o, v.videoHeight * o);
   const cx = c.getContext('2d'); cx.imageSmoothingQuality = 'high';
   cx.drawImage(v, 0, 0, c.width, c.height);
   const flas = document.querySelector('#trFlas'); if (flas) { flas.classList.remove('on'); void flas.offsetWidth; flas.classList.add('on'); }
+  OTO.bekle = true; OTO.iz = trIz(v); OTO.sabit = 0;
+  const yedek = OTO.kose ? OTO.kose.map(q => q.slice()) : null;
   const yerine = TR.yenile; TR.yenile = -1;
-  trEkran('duzen');
-  await trFotoAl(c, yerine);
+  if (oto && yerine < 0) {
+    trMesaj((TR.sayfalar.length + 1) + '. sayfa çekildi');
+    await trFotoAl(c, -1, yedek);
+  } else {
+    trEkran('duzen');
+    await trFotoAl(c, yerine, yedek);
+  }
   trBoya();
+}
+
+/* ---------------- canlı kenar yakalama + otomatik çekim ---------------- */
+const OTO = { acik: true, kose: null, ham: null, sabit: 0, kayip: 0, bekle: false, iz: null, cekiliyor: false };
+try { OTO.acik = localStorage.getItem('pdfDuzenleme.tara.oto') !== '0'; } catch (e) { }
+function trIz(v) {
+  // görüntünün küçük gri izi: aynı sayfa mı, yeni sayfa mı anlamak için
+  try {
+    const c = trCanvas(32, 32), cx = c.getContext('2d', { willReadFrequently: true });
+    cx.drawImage(v, 0, 0, 32, 32);
+    const d = cx.getImageData(0, 0, 32, 32).data, iz = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) iz[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
+    return iz;
+  } catch (e) { return null; }
+}
+function trIzFark(a, b) { let t = 0; for (let i = 0; i < 1024; i++) t += Math.abs(a[i] - b[i]); return t / 1024; }
+function trCanliCiz(kose, sabit) {
+  const pol = trKutu && trKutu.querySelector('#trCanliCokgen'); if (!pol) return;
+  const v = trKutu.querySelector('#trVideo'), sahne = v.parentElement;
+  if (!kose || !v.videoWidth) { pol.setAttribute('points', ''); pol.classList.remove('on', 'sabit'); return; }
+  const r = sahne.getBoundingClientRect(), o = Math.min(r.width / v.videoWidth, r.height / v.videoHeight);
+  const w = v.videoWidth * o, h = v.videoHeight * o, x0 = (r.width - w) / 2, y0 = (r.height - h) / 2;
+  pol.setAttribute('points', kose.map(q => (x0 + q[0] * w).toFixed(1) + ',' + (y0 + q[1] * h).toFixed(1)).join(' '));
+  pol.classList.add('on'); pol.classList.toggle('sabit', !!sabit);
+}
+function trIpucu(m) { const e = trKutu && trKutu.querySelector('#trIpucu'); if (e && e.textContent !== m) e.textContent = m; }
+function trCanliDongu() {
+  clearTimeout(TR.canliT);
+  if (!trKutu || trKutu.hidden || TR.ekran !== 'kamera' || !TR.akis) { trCanliCiz(null); return; }
+  const v = trKutu.querySelector('#trVideo');
+  if (v.videoWidth && v.readyState >= 2) {
+    let k = null; try { k = trKenarBul(v, 300); } catch (e) { k = null; }
+    const simdi = performance.now();
+    if (k) {
+      const hareket = OTO.ham ? Math.max.apply(null, k.map((q, i) => Math.hypot(q[0] - OTO.ham[i][0], q[1] - OTO.ham[i][1]))) : 1;
+      OTO.ham = k; OTO.kayip = 0;
+      OTO.kose = OTO.kose ? OTO.kose.map((q, i) => [q[0] * 0.55 + k[i][0] * 0.45, q[1] * 0.55 + k[i][1] * 0.45]) : k;
+      if (hareket < 0.02) { if (!OTO.sabit) OTO.sabit = simdi; } else OTO.sabit = 0;
+    } else {
+      OTO.kayip++; OTO.sabit = 0; OTO.ham = null;
+      if (OTO.kayip >= 3) OTO.kose = null;
+    }
+    // aynı sayfa ikinci kez çekilmesin: sayfa çerçeveden çıkana ya da değişene kadar beklenir
+    if (OTO.bekle) {
+      if (OTO.kayip >= 3) OTO.bekle = false;
+      else if (OTO.iz) { const iz = trIz(v); if (iz && trIzFark(iz, OTO.iz) > 12) OTO.bekle = false; }
+    }
+    const sure = OTO.sabit ? simdi - OTO.sabit : 0;
+    trCanliCiz(OTO.kose, OTO.acik && !OTO.bekle && sure > 450);
+    trIpucu(!OTO.kose ? 'Belge aranıyor…' : OTO.bekle ? 'Sonraki sayfayı yerleştirin' :
+      OTO.acik ? (sure > 450 ? 'Sabit tutun, çekiliyor…' : 'Belge bulundu, sabit tutun') : 'Belge bulundu, Çek\'e dokunun');
+    if (OTO.acik && !OTO.bekle && !OTO.cekiliyor && OTO.kose && sure > 1100 && TR.sayfalar.length < TR.EN_COK) {
+      OTO.cekiliyor = true;
+      trCekCanli(true).catch(() => { }).then(() => { OTO.cekiliyor = false; });
+    }
+  }
+  TR.canliT = setTimeout(trCanliDongu, 120);
+}
+function trOtoBoya() {
+  const b = trKutu && trKutu.querySelector('#trOtoDug'); if (!b) return;
+  b.classList.toggle('acik', OTO.acik);
+  b.querySelector('span').textContent = 'Otomatik çekim: ' + (OTO.acik ? 'Açık' : 'Kapalı');
+  b.hidden = !TR.akis;
 }
 async function trDosyalar(liste) {
   const fs = Array.from(liste || []).filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name));
@@ -16713,8 +16843,10 @@ function trKur() {
     // kamera
     '<div class="tr-ekran" data-e="kamera"><div class="tr-sahne">' +
     '<video id="trVideo" playsinline muted autoplay></video><div id="trFlas"></div>' +
-    '<div class="tr-bos" id="trKameraYok">' + trSvg(TR_IK.kamera) + '<p>Fotoğraf çekmek için <b>Çek</b>\'e dokunun.<br>Kamera telefonun kendi uygulamasıyla açılır.</p></div>' +
-    '<div class="tr-ipucu">Sayfayı çerçeveye sığdırıp düz tutun</div></div>' +
+    '<svg id="trCanliCizgi"><polygon id="trCanliCokgen"/></svg>' +
+    '<button type="button" class="tr-oto" id="trOtoDug" hidden><i></i><span>Otomatik çekim: Açık</span></button>' +
+    '<div class="tr-bos" id="trKameraYok" hidden></div>' +
+    '<div class="tr-ipucu" id="trIpucu">Kamera açılıyor…</div></div>' +
     '<div class="tr-kalt"><button type="button" class="tr-yuvarlak" id="trGaleri">' + trSvg(TR_IK.galeri) + '<span>Galeri</span></button>' +
     '<button type="button" class="tr-deklansor" id="trCek" aria-label="Çek"><i></i></button>' +
     '<button type="button" class="tr-yuvarlak" id="trBitti"><span class="tr-kucukresim" id="trSonKucuk"></span><span id="trBittiYazi">Bitti</span></button></div></div>' +
@@ -16758,6 +16890,11 @@ function trKur() {
 
   $k('#trKapat').addEventListener('click', () => trKapat(false));
   $k('#trCek').addEventListener('click', () => trCek());
+  $k('#trOtoDug').addEventListener('click', () => {
+    OTO.acik = !OTO.acik; OTO.sabit = 0;
+    try { localStorage.setItem('pdfDuzenleme.tara.oto', OTO.acik ? '1' : '0'); } catch (e) { }
+    trOtoBoya();
+  });
   $k('#trGaleri').addEventListener('click', () => $k('#trDosyaGaleri').click());
   $k('#trBitti').addEventListener('click', () => { if (TR.sayfalar.length) { TR.yenile = -1; trEkran('duzen'); } });
   $k('#trDosyaKamera').addEventListener('change', e => { const f = e.target.files; trDosyalar(f); e.target.value = ''; });
@@ -16807,6 +16944,10 @@ function trKur() {
   $k('#trSorEvet').addEventListener('click', () => { $k('#trSor').hidden = true; trKapat(true); });
 
   window.addEventListener('resize', () => { if (TR.ekran === 'kirp') trKirpCiz(); });
+  // telefon arka plana alınıp dönünce kamera kapanmış olabilir: yeniden açılır
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && trKutu && !trKutu.hidden && TR.ekran === 'kamera' && TR.akis && !trAkisCanli()) trKameraEkrani();
+  });
   // tarama açıkken programın kısayolları (Delete, Ctrl+A …) arkadaki belgeye işlemesin
   window.addEventListener('keydown', e => {
     if (!trKutu || trKutu.hidden) return;
@@ -16825,8 +16966,14 @@ function trEkran(ad) {
   TR.ekran = ad;
   for (const e of trKutu.querySelectorAll('.tr-ekran')) e.classList.toggle('on', e.dataset.e === ad);
   const v = trKutu.querySelector('#trVideo');
-  if (ad === 'kamera' && TR.akis) { if (v.srcObject !== TR.akis) v.srcObject = TR.akis; v.play().catch(() => { }); }
-  else if (v && !v.paused) v.pause();
+  if (ad === 'kamera' && TR.akis) {
+    if (v.srcObject !== TR.akis) v.srcObject = TR.akis;
+    v.play().catch(() => { });
+    OTO.kose = null; OTO.ham = null; OTO.sabit = 0; OTO.kayip = 0;
+    trCanliDongu();
+  } else if (v && !v.paused) v.pause();
+  if (ad !== 'kamera') trCanliCiz(null);
+  trOtoBoya();
   if (ad === 'bitti') {
     trKutu.querySelector('#trBittiBilgi').textContent = TR.sonAd + ' · ' + TR.sayfalar.length + ' sayfa · ' + trBoyut(TR.sonPdf ? TR.sonPdf.length : 0);
   }
@@ -16839,10 +16986,13 @@ function trSonrakiCekim() {
 }
 async function trKameraEkrani() {
   trEkran('kamera');
+  trIpucu('Kamera açılıyor…');
   const var_ = await trKameraAc();
+  if (!var_) trKameraYokYaz();
   trKutu.querySelector('#trKameraYok').hidden = var_;
   trKutu.querySelector('#trVideo').hidden = !var_;
-  if (var_) trEkran('kamera');
+  trKutu.querySelector('.tr-ekran[data-e="kamera"] .tr-ipucu').hidden = !var_;
+  if (TR.ekran === 'kamera') trEkran('kamera');
 }
 
 function trBoya() {
@@ -16976,6 +17126,17 @@ function trAc() {
   trTemizle();
   trKutu.hidden = false;
   document.documentElement.classList.add('tr-acik');
+  // canlı kamera bu sayfada hiç mümkün değilse (ya da az önce reddedildiyse) ara ekran
+  // beklemeden telefonun kendi kamerası açılır; dokunuşun içinde açılması gerekir
+  if (!trCanliMumkun() || TR.kameraYok) {
+    if (!trCanliMumkun()) TR.kameraHata = 'yok';
+    trEkran('kamera'); trKameraYokYaz();
+    trKutu.querySelector('#trKameraYok').hidden = false;
+    trKutu.querySelector('#trVideo').hidden = true;
+    trKutu.querySelector('.tr-ekran[data-e="kamera"] .tr-ipucu').hidden = true;
+    trKutu.querySelector('#trDosyaKamera').click();
+    return;
+  }
   trKameraEkrani();
 }
 function trKapat(kesin) {
@@ -16985,6 +17146,7 @@ function trKapat(kesin) {
     trKutu.querySelector('#trSor').hidden = false;
     return;
   }
+  clearTimeout(TR.canliT);
   trKameraKapat();
   trTemizle();
   trKutu.hidden = true;
@@ -17017,6 +17179,19 @@ function trKapat(kesin) {
     '#trKutu .tr-bos{display:flex;flex-direction:column;align-items:center;gap:12px;color:#9ca3af;text-align:center;padding:24px;line-height:1.5}' +
     '#trKutu .tr-bos[hidden]{display:none}' +
     '#trKutu .tr-bos svg{width:64px;height:64px;stroke-width:1.3}' +
+    '#trKutu .tr-bos p{margin:0;max-width:440px}' +
+    '#trKutu .tr-bos b{color:#f3f4f6}' +
+    '#trKutu .tr-kucukyazi{font-size:12.5px;color:#9ca3af}' +
+    '#trKutu .tr-tekrar{height:44px;padding:0 26px;border-radius:22px;font-weight:700;cursor:pointer;margin-top:6px}' +
+    '#trKutu #trCanliCizgi{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}' +
+    '#trKutu #trCanliCokgen{fill:rgba(37,99,235,.18);stroke:#3b82f6;stroke-width:3;stroke-linejoin:round;opacity:0;transition:opacity .15s}' +
+    '#trKutu #trCanliCokgen.on{opacity:1}' +
+    '#trKutu #trCanliCokgen.sabit{fill:rgba(22,163,74,.22);stroke:#22c55e}' +
+    '#trKutu .tr-oto{position:absolute;top:10px;right:10px;display:flex;align-items:center;gap:7px;border:0;background:rgba(0,0,0,.55);border-radius:16px;padding:6px 12px;font-size:12.5px;cursor:pointer;z-index:2}' +
+    '#trKutu .tr-oto[hidden]{display:none}' +
+    '#trKutu .tr-oto i{width:9px;height:9px;border-radius:50%;background:#9ca3af}' +
+    '#trKutu .tr-oto.acik i{background:#22c55e}' +
+    '#trKutu .tr-ipucu[hidden]{display:none}' +
     '#trKutu .tr-ipucu{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#e5e7eb;font-size:12.5px;padding:6px 12px;border-radius:14px;white-space:nowrap;max-width:94%;overflow:hidden;text-overflow:ellipsis;pointer-events:none}' +
     '#trKutu .tr-ipucu-alt{position:static;transform:none;margin:8px auto 0;background:transparent;color:#9ca3af}' +
     '#trKutu .tr-kalt{flex:none;height:118px;display:flex;align-items:center;justify-content:space-around;padding:0 12px}' +
@@ -17084,7 +17259,7 @@ function trKapat(kesin) {
   const panel = (typeof MN !== 'undefined' && MN.paneller) ? MN.paneller.tum : null;
   if (!panel) return;
   MN_IKON.tara = '<path d="M4 8h3l1.6-2.4h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.6"/>';
-  const oge = mnOge('tara', 'Belge tara', '#e0261b', () => trAc(), null, false);
+  const oge = mnOge('tara', 'Belge tara', '#1e5bb8', () => trAc(), null, false);
   let once = null;
   for (const el of panel.children) { const ad = el.querySelector && el.querySelector('.mn-ad'); if (ad && ad.textContent === 'PDF oluştur') once = el; }
   if (once && once.nextSibling) panel.insertBefore(oge, once.nextSibling);
