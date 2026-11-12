@@ -9390,7 +9390,7 @@ openDocFile = async function (file) {
     '<text x="17" y="25.3" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.6" font-weight="700" fill="#fff">PDF</text>' +
     '<path d="M32 29h6.5v7.5h4.5L35.25 45 27.5 36.5H32z" fill="#e3060f"/>' +
     '</svg></span>' +
-    '<span class="bl-yazi"><b>PDF_Düzenleme_Programı_V4.2</b></span>';
+    '<span class="bl-yazi"><b>PDF_Düzenleme_Programı_V4.3</b></span>';
   header.insertAdjacentHTML('beforeend',
     '<div class="bl-zoom"><button type="button" class="bl-zb" id="blKucult" title="Uzaklaştır">−</button>' +
     '<span class="bl-zv" id="blYuzde">%100</span>' +
@@ -16302,6 +16302,25 @@ function spPencere() {
    perspektif, elle tutulan kâğıt ve dağınık masada çok daha iyi yakalar.
    Canlı kamerada daha sık ve daha toleranslı (el titremesine) çalışır;
    uzun süre belge bulunamazsa ipucu verir.
+
+   EK — 12.11.2026 (V4.3): Adobe Scan gibi çalışması için:
+   - Canlı kamera: yakalama ayrı bir işçide (arka planda) yapılır, görüntü
+     takılmaz; daha hızlı kenar bulma; sayfanın üstünde kalın mavi
+     kenarlıklı çerçeve akıcı biçimde sayfayı izler. Belge sabit tutulunca
+     ortada "Yakalanıyor… Sabit tutun" yazar, deklanşörün çevresinde mavi
+     halka dolar, dolunca çeker ve deklanşör sesi çalar (ses programın
+     içinde üretilir; telefon sessizdeyse çalmaz). Sağ altta "Bitti" yazısı
+     yerine son sayfanın küçük resmi ve sayfa sayısı rozeti durur.
+   - Çekim sonrası: temizlenmiş sayfa büyük gösterilir, üstünde köşe ve
+     kenar tutamaklı mavi çerçeve vardır; bir tutamağa dokunup sürükleyince
+     kırpmaya geçilir ve sürükleme kesilmeden sürer. "‹ Sayfa 2/2 ›" ile ya
+     da sayfayı sağa/sola kaydırarak sayfalar arasında geçilir; Sayfa
+     düğmesi küçük resim şeridini açar/kapatır.
+   - Kırpma: sayfaya yakınlaşılmış görünüm, köşe + kenar ortası tutamakları
+     (kenar tutamağı bütün kenarı kaydırır), köşe sürüklenirken parmağın
+     üstünde büyüteç.
+   - Belge filtresi: kâğıt daha beyaz, yazı daha koyu ve net (seviye eğrisi
+     + netleştirme), renkli mürekkep daha canlı.
    Programın kendi koduna dokunulmadı.
    ===================================================================== */
 'use strict';
@@ -16404,50 +16423,60 @@ function trBulanik(g, w, h) {
 }
 function trCanny(g, w, h, oran) {
   const n = w * h, mag = new Float32Array(n), yon = new Uint8Array(n), GX = new Float32Array(n), GY = new Float32Array(n);
-  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-    const i = y * w + x;
-    const gx = -g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1] + g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1];
-    const gy = -g[i - w - 1] - 2 * g[i - w] - g[i - w + 1] + g[i + w - 1] + 2 * g[i + w] + g[i + w + 1];
-    const m = Math.hypot(gx, gy); mag[i] = m; GX[i] = gx; GY[i] = gy;
-    let a = Math.atan2(gy, gx) * 180 / Math.PI; if (a < 0) a += 180;
-    yon[i] = a < 22.5 || a >= 157.5 ? 0 : a < 67.5 ? 1 : a < 112.5 ? 2 : 3;
+  const hist = new Uint32Array(1024); let hs = 0;
+  for (let y = 1; y < h - 1; y++) {
+    let i = y * w + 1;
+    for (let x = 1; x < w - 1; x++, i++) {
+      const a = g[i - w - 1], b = g[i - w], c = g[i - w + 1], d = g[i - 1], e = g[i + 1], f = g[i + w - 1], gg = g[i + w], hh = g[i + w + 1];
+      const gx = c + 2 * e + hh - a - 2 * d - f, gy = f + 2 * gg + hh - a - 2 * b - c;
+      const m = Math.sqrt(gx * gx + gy * gy); mag[i] = m; GX[i] = gx; GY[i] = gy;
+      // yön: 0 yatay eğim, 1 ve 3 çapraz, 2 dikey (tan 22,5° = 0,4142)
+      const ax = gx < 0 ? -gx : gx, ay = gy < 0 ? -gy : gy;
+      yon[i] = ay <= 0.4142 * ax ? 0 : ax <= 0.4142 * ay ? 2 : (gx * gy > 0 ? 1 : 3);
+      if (m > 4) { hist[m > 1023 ? 1023 : m | 0]++; hs++; }
+    }
   }
-  // eşikler: kenar büyüklüklerinin dağılımından
-  const ornek = [];
-  for (let i = 0; i < n; i += 3) if (mag[i] > 4) ornek.push(mag[i]);
-  ornek.sort((p, q) => p - q);
-  const yuksek = Math.max(14, (ornek[Math.floor(ornek.length * 0.72)] || 40) * (oran || 1)), dusuk = yuksek * 0.42;
+  // eşikler: kenar büyüklüklerinin dağılımından (yüzdelik)
+  let say = 0, p72 = 40; const hedef = hs * 0.72;
+  for (let v = 0; v < 1024; v++) { say += hist[v]; if (say >= hedef) { p72 = v + 0.5; break; } }
+  const yuksek = Math.max(14, (hs ? p72 : 40) * (oran || 1)), dusuk = yuksek * 0.42;
   const ince = new Float32Array(n);
-  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-    const i = y * w + x, m = mag[i]; if (m < dusuk) continue;
-    let a, b;
-    switch (yon[i]) { case 0: a = mag[i - 1]; b = mag[i + 1]; break; case 1: a = mag[i - w - 1]; b = mag[i + w + 1]; break; case 2: a = mag[i - w]; b = mag[i + w]; break; default: a = mag[i - w + 1]; b = mag[i + w - 1]; }
-    if (m >= a && m >= b) ince[i] = m;
+  for (let y = 1; y < h - 1; y++) {
+    let i = y * w + 1;
+    for (let x = 1; x < w - 1; x++, i++) {
+      const m = mag[i]; if (m < dusuk) continue;
+      let a, b;
+      switch (yon[i]) { case 0: a = mag[i - 1]; b = mag[i + 1]; break; case 1: a = mag[i - w - 1]; b = mag[i + w + 1]; break; case 2: a = mag[i - w]; b = mag[i + w]; break; default: a = mag[i - w + 1]; b = mag[i + w - 1]; }
+      if (m >= a && m >= b) ince[i] = m;
+    }
   }
   const kenar = new Uint8Array(n), yigin = new Int32Array(n); let sp = 0;
-  for (let i = 0; i < n; i++) if (ince[i] >= yuksek && !kenar[i]) { kenar[i] = 1; yigin[sp++] = i; }
+  const kom = [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1];
+  for (let i = 0; i < n; i++) if (ince[i] >= yuksek) { kenar[i] = 1; yigin[sp++] = i; }
   while (sp) {
     const i = yigin[--sp];
-    for (const d of [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1]) {
-      const j = i + d; if (j < 0 || j >= n || kenar[j]) continue;
+    for (let q = 0; q < 8; q++) {
+      const j = i + kom[q]; if (j < 0 || j >= n || kenar[j]) continue;
       if (ince[j] >= dusuk) { kenar[j] = 1; yigin[sp++] = j; }
     }
   }
   // "sınır gibi" kenarlar: iki yanında geniş ölçekte de parlaklık farkı sürüyor (kâğıt/zemin);
   // ince yazı çizgilerinde iki yan da kâğıttır, bunlar elenir (düz çizgi aramasında kullanılır)
   const kenarB = new Uint8Array(n);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x; if (!kenar[i] || !mag[i]) continue;
-    const ux = GX[i] / mag[i], uy = GY[i] / mag[i];
-    let enAzFark = 1e9, isaret = 0, tamam = true;
-    for (const r of [5, 8]) {
-      const x1 = Math.round(x + ux * r), y1 = Math.round(y + uy * r), x2 = Math.round(x - ux * r), y2 = Math.round(y - uy * r);
-      if (x1 < 0 || y1 < 0 || x1 >= w || y1 >= h || x2 < 0 || y2 < 0 || x2 >= w || y2 >= h) { tamam = false; break; }
-      const f = g[y1 * w + x1] - g[y2 * w + x2];
-      if (isaret && Math.sign(f) !== isaret) { tamam = false; break; }
-      isaret = Math.sign(f); if (Math.abs(f) < enAzFark) enAzFark = Math.abs(f);
+  for (let y = 0; y < h; y++) {
+    let i = y * w;
+    for (let x = 0; x < w; x++, i++) {
+      if (!kenar[i]) continue;
+      const m = mag[i]; if (!m) continue;
+      const ux = GX[i] / m, uy = GY[i] / m;
+      const x1 = (x + ux * 5 + 0.5) | 0, y1 = (y + uy * 5 + 0.5) | 0, x2 = (x - ux * 5 + 0.5) | 0, y2 = (y - uy * 5 + 0.5) | 0;
+      const x3 = (x + ux * 8 + 0.5) | 0, y3 = (y + uy * 8 + 0.5) | 0, x4 = (x - ux * 8 + 0.5) | 0, y4 = (y - uy * 8 + 0.5) | 0;
+      if (x3 < 0 || y3 < 0 || x3 >= w || y3 >= h || x4 < 0 || y4 < 0 || x4 >= w || y4 >= h || x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0 || x1 >= w || y1 >= h || x2 >= w || y2 >= h) continue;
+      const f1 = g[y1 * w + x1] - g[y2 * w + x2], f2 = g[y3 * w + x3] - g[y4 * w + x4];
+      if ((f1 > 0) !== (f2 > 0)) continue;
+      const enAz = Math.min(f1 < 0 ? -f1 : f1, f2 < 0 ? -f2 : f2);
+      if (enAz >= TR_SINIR_ESIK) kenarB[i] = 1;
     }
-    if (tamam && enAzFark >= TR_SINIR_ESIK) kenarB[i] = 1;
   }
   return { kenar, kenarB, mag, GX, GY };
 }
@@ -16544,54 +16573,65 @@ function trAciOk(k) {
 /* kenarlarla çevrili bölgelerden aday dörtgenler */
 function trBolgeAdaylari(kenarG, w, h, r) {
   const n = w * h, et = new Int32Array(n).fill(-1), yigin = new Int32Array(n);
-  const bolgeler = [];
+  const boylar = [], degiyor = [];
   for (let i = 0; i < n; i++) {
     if (kenarG[i] || et[i] >= 0) continue;
-    const no = bolgeler.length; let sp = 0, boy = 0, degiyor = false;
-    const solX = new Int32Array(h).fill(w), sagX = new Int32Array(h).fill(-1);
+    const no = boylar.length; let sp = 0, boy = 0, deg = false;
     yigin[sp++] = i; et[i] = no;
     while (sp) {
       const p = yigin[--sp]; boy++;
-      const x = p % w, y = (p / w) | 0;
-      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) degiyor = true;
-      if (x < solX[y]) solX[y] = x; if (x > sagX[y]) sagX[y] = x;
+      const x = p % w, y = (p - x) / w;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) deg = true;
       if (x > 0 && !kenarG[p - 1] && et[p - 1] < 0) { et[p - 1] = no; yigin[sp++] = p - 1; }
       if (x < w - 1 && !kenarG[p + 1] && et[p + 1] < 0) { et[p + 1] = no; yigin[sp++] = p + 1; }
       if (y > 0 && !kenarG[p - w] && et[p - w] < 0) { et[p - w] = no; yigin[sp++] = p - w; }
       if (y < h - 1 && !kenarG[p + w] && et[p + w] < 0) { et[p + w] = no; yigin[sp++] = p + w; }
     }
-    bolgeler.push({ boy, degiyor, solX, sagX });
+    boylar.push(boy); degiyor.push(deg);
   }
-  const adaylar = bolgeler.filter(b => !b.degiyor && b.boy > n * 0.025).sort((a, b) => b.boy - a.boy).slice(0, 8);
+  const secilen = [];
+  for (let k = 0; k < boylar.length; k++) if (!degiyor[k] && boylar[k] > n * 0.025) secilen.push(k);
+  secilen.sort((a, b) => boylar[b] - boylar[a]); secilen.length = Math.min(secilen.length, 8);
+  if (!secilen.length) return [];
+  const sira = new Int32Array(boylar.length).fill(-1); secilen.forEach((k, s) => { sira[k] = s; });
+  const solX = secilen.map(() => new Int32Array(h).fill(w)), sagX = secilen.map(() => new Int32Array(h).fill(-1));
+  for (let y = 0; y < h; y++) {
+    let i = y * w;
+    for (let x = 0; x < w; x++, i++) {
+      const e = et[i]; if (e < 0) continue; const s = sira[e]; if (s < 0) continue;
+      if (x < solX[s][y]) solX[s][y] = x; if (x > sagX[s][y]) sagX[s][y] = x;
+    }
+  }
   const sonuc = [];
-  for (const b of adaylar) {
+  for (let s = 0; s < secilen.length; s++) {
     const P = [];
-    for (let y = 0; y < h; y++) if (b.sagX[y] >= 0) { P.push([b.solX[y] - r - 0.5, y]); P.push([b.sagX[y] + r + 0.5, y]); }
+    for (let y = 0; y < h; y++) if (sagX[s][y] >= 0) { P.push([solX[s][y] - r - 0.5, y]); P.push([sagX[s][y] + r + 0.5, y]); }
     if (P.length < 8) continue;
-    // üst ve alt sıralar genişletme payı kadar dışarı
-    const Z = trZarf(P);
-    const q = trEnBuyukDortgen(Z);
+    const q = trEnBuyukDortgen(trZarf(P));
     if (!q) continue;
     const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
-    const k = q.map(p => { const dx = p[0] - cx, dy = p[1] - cy, L = Math.hypot(dx, dy) || 1; return [p[0] + dx / L * r * 0.7, p[1] + dy / L * r * 1.0]; });
-    sonuc.push(k);
+    sonuc.push(q.map(p => { const dx = p[0] - cx, dy = p[1] - cy, L = Math.hypot(dx, dy) || 1; return [p[0] + dx / L * r * 0.7, p[1] + dy / L * r * 1.0]; }));
   }
   return sonuc;
 }
 function trKenarBul(kaynak, enBoy, onceki) {
-  const G = trGriKopya(kaynak, enBoy || 420), w = G.w, h = G.h;
-  const g = trBulanik(G.g, w, h);
+  const G = trGriKopya(kaynak, enBoy || 420);
+  return trKenarBulGri(G.g, G.w, G.h, onceki, !!(enBoy && enBoy < 400));
+}
+/* gri görüntüden sayfa köşeleri. hafif: canlı kamera için (daha az genişletme denemesi) */
+function trKenarBulGri(g0, w, h, onceki, hafif) {
+  const g = trBulanik(g0, w, h);
   const adaylar = [];
   for (const oran of [1, 0.6]) {
     const C = trCanny(g, w, h, oran);
     const destekHarita = C;
-    for (const r of [1, 2, 3]) {
+    for (const r of (hafif ? [1, 2] : [1, 2, 3])) {
       const kg = trGenislet(C.kenar, w, h, r);
       for (const q of trBolgeAdaylari(kg, w, h, r)) adaylar.push({ q, destekHarita, tur: 'bolge' });
     }
     const eski = trKenarBulParlak(g, w, h);
     if (eski) adaylar.push({ q: eski, destekHarita, tur: 'parlak' });
-    for (const q of trHoughAdaylari(C.kenarB, w, h, enBoy && enBoy < 360 ? 14 : 20)) adaylar.push({ q, destekHarita, tur: 'hough' });
+    for (const q of trHoughAdaylari(C.kenarB, w, h, hafif ? 14 : 20)) adaylar.push({ q, destekHarita, tur: 'hough' });
     // değerlendir
     const gecerli = [];
     for (const a of adaylar) {
@@ -16744,11 +16784,17 @@ function trCiktiBoyu(kose, kw, kh) {
 function trDuzlestir(kaynakCanvas, kose) {
   const kw = kaynakCanvas.width, kh = kaynakCanvas.height;
   const [W, H] = trCiktiBoyu(kose, kw, kh);
-  const P = kose.map(q => [q[0] * kw, q[1] * kh]);
-  const m = trHomografi([[0, 0], [W, 0], [W, H], [0, H]], P);
   const src = kaynakCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, kw, kh).data;
   const out = trCanvas(W, H), ocx = out.getContext('2d', { willReadFrequently: true });
-  const im = ocx.createImageData(W, H), dst = im.data;
+  const im = ocx.createImageData(W, H);
+  trDuzlestirVeri(src, kw, kh, kose, W, H, im.data);
+  ocx.putImageData(im, 0, 0);
+  return out;
+}
+/* düzleştirmenin saf hesabı (işçide de çalışır) */
+function trDuzlestirVeri(src, kw, kh, kose, W, H, dst) {
+  const P = kose.map(q => [q[0] * kw, q[1] * kh]);
+  const m = trHomografi([[0, 0], [W, 0], [W, H], [0, H]], P);
   const [a, b, c, d, e, f, g, hh] = m, mx = kw - 1.001, my = kh - 1.001;
   let o = 0;
   for (let v = 0; v < H; v++) {
@@ -16768,15 +16814,21 @@ function trDuzlestir(kaynakCanvas, kose) {
       o += 4; nx += a; ny += d; dn += g;
     }
   }
-  ocx.putImageData(im, 0, 0);
-  return out;
+  return dst;
 }
 
 /* ---------------- filtreler ---------------- */
 function trFiltre(canvas, tur) {
   if (tur === 'orijinal') return canvas;
   const W = canvas.width, H = canvas.height, cx = canvas.getContext('2d', { willReadFrequently: true });
-  const im = cx.getImageData(0, 0, W, H), d = im.data;
+  const im = cx.getImageData(0, 0, W, H);
+  trFiltreVeri(im.data, W, H, tur);
+  cx.putImageData(im, 0, 0);
+  return canvas;
+}
+/* filtrenin saf hesabı (işçide de çalışır) */
+function trFiltreVeri(d, W, H, tur) {
+  if (tur === 'orijinal') return;
   // zemin haritası: 8'de bir küçült, en parlağı yay (yazıyı sil), yumuşat
   const K = 8, sw = Math.max(2, Math.ceil(W / K)), sh = Math.max(2, Math.ceil(H / K));
   const z = [new Float32Array(sw * sh), new Float32Array(sw * sh), new Float32Array(sw * sh)];
@@ -16828,19 +16880,49 @@ function trFiltre(canvas, tur) {
         const z2 = Math.max(taban, z[2][s00] * w00 + z[2][s10] * w10 + z[2][s01] * w01 + z[2][s11] * w11);
         r = d[i] / z0 * 255; gg = d[i + 1] / z1 * 255; bb = d[i + 2] / z2 * 255;
       }
-      // seviye: kâğıt tam beyaz, mürekkep biraz koyulaşsın
-      r = (r - 22) * 1.13; gg = (gg - 22) * 1.13; bb = (bb - 22) * 1.13;
       if (tur === 'sb') {
+        r = (r - 22) * 1.13;
         const t = (r - 150) / 50, v = t <= 0 ? 0 : t >= 1 ? 255 : (t * t * (3 - 2 * t)) * 255;
         r = gg = bb = v;
+      } else {
+        // seviye eğrisi (Adobe "Otomatik renk" gibi): kâğıt bembeyaz, yazı koyu ve net
+        r = TR_EGRI[r < 0 ? 0 : r > 400 ? 400 : r | 0]; gg = TR_EGRI[gg < 0 ? 0 : gg > 400 ? 400 : gg | 0]; bb = TR_EGRI[bb < 0 ? 0 : bb > 400 ? 400 : bb | 0];
+        if (!gri) {
+          // renkli mürekkep (mavi kalem, sarı fosforlu, kaşe) daha canlı
+          const L = r * 0.299 + gg * 0.587 + bb * 0.114;
+          r = L + (r - L) * 1.3; gg = L + (gg - L) * 1.3; bb = L + (bb - L) * 1.3;
+        }
       }
       d[i] = r < 0 ? 0 : r > 255 ? 255 : r;
       d[i + 1] = gg < 0 ? 0 : gg > 255 ? 255 : gg;
       d[i + 2] = bb < 0 ? 0 : bb > 255 ? 255 : bb;
     }
   }
-  cx.putImageData(im, 0, 0);
-  return canvas;
+  if (tur !== 'sb') trKeskinlestir(d, W, H, 0.55);
+}
+/* seviye eğrisi tablosu: 36 altı siyah, 226 üstü beyaz, arası hafif koyulaştırılmış */
+function trEgriYap() {
+  const t = new Uint8ClampedArray(401);
+  for (let v = 0; v <= 400; v++) { const x = Math.min(1, Math.max(0, (v - 36) / (226 - 36))); t[v] = Math.round(255 * Math.pow(x, 1.22)); }
+  return t;
+}
+const TR_EGRI = trEgriYap();
+/* netleştirme (keskinlik maskesi): yazı kenarları belirginleşir */
+function trKeskinlestir(d, W, H, guc) {
+  const n = W * H, L = new Float32Array(n);
+  for (let i = 0, j = 0; i < n; i++, j += 4) L[i] = d[j] * 0.299 + d[j + 1] * 0.587 + d[j + 2] * 0.114;
+  // 3x3 kutu bulanığı (satır + sütun)
+  const t = new Float32Array(n), b = new Float32Array(n);
+  for (let y = 0; y < H; y++) { const o = y * W; t[o] = L[o]; t[o + W - 1] = L[o + W - 1]; for (let x = 1; x < W - 1; x++) t[o + x] = (L[o + x - 1] + L[o + x] + L[o + x + 1]) / 3; }
+  for (let x = 0; x < W; x++) { b[x] = t[x]; b[(H - 1) * W + x] = t[(H - 1) * W + x]; }
+  for (let y = 1; y < H - 1; y++) { const o = y * W; for (let x = 0; x < W; x++) b[o + x] = (t[o + x - W] + t[o + x] + t[o + x + W]) / 3; }
+  for (let i = 0, j = 0; i < n; i++, j += 4) {
+    const f = (L[i] - b[i]) * guc;
+    if (f > -0.5 && f < 0.5) continue;
+    let v = d[j] + f; d[j] = v < 0 ? 0 : v > 255 ? 255 : v;
+    v = d[j + 1] + f; d[j + 1] = v < 0 ? 0 : v > 255 ? 255 : v;
+    v = d[j + 2] + f; d[j + 2] = v < 0 ? 0 : v > 255 ? 255 : v;
+  }
 }
 
 /* ---------------- sayfa işleme ---------------- */
@@ -16850,6 +16932,37 @@ async function trKaynakCanvas(sf) {
   c.getContext('2d').drawImage(im, 0, 0);
   return c;
 }
+/* sayfa düzleştirme + filtre de ayrı bir işçide yapılır: çekimden sonra ekran donmaz */
+const TR_ISLEMCI = { isci: null, olmadi: false, no: 0, bekleyen: new Map() };
+function trIslemciKur() {
+  if (TR_ISLEMCI.isci || TR_ISLEMCI.olmadi) return TR_ISLEMCI.isci;
+  try {
+    const fs = [trHomografi, trCiktiBoyu, trDuzlestirVeri, trFiltreVeri, trKeskinlestir, trEgriYap];
+    const kod = "'use strict';const TR={CIKTI_UZUN:" + TR.CIKTI_UZUN + "};\n" + fs.map(f => f.toString()).join('\n') + "\nconst TR_EGRI=trEgriYap();\n" +
+      "onmessage=function(e){var d=e.data;try{var src=new Uint8ClampedArray(d.src),b=trCiktiBoyu(d.kose,d.kw,d.kh),W=b[0],H=b[1],dst=new Uint8ClampedArray(W*H*4);" +
+      "trDuzlestirVeri(src,d.kw,d.kh,d.kose,W,H,dst);trFiltreVeri(dst,W,H,d.tur);postMessage({no:d.no,W:W,H:H,dst:dst.buffer},[dst.buffer]);}" +
+      "catch(h){postMessage({no:d.no,hata:String(h&&h.message||h)});}};";
+    const w = new Worker(URL.createObjectURL(new Blob([kod], { type: 'text/javascript' })));
+    w.onmessage = e => { const b = TR_ISLEMCI.bekleyen.get(e.data.no); if (b) { TR_ISLEMCI.bekleyen.delete(e.data.no); b(e.data); } };
+    w.onerror = () => { TR_ISLEMCI.olmadi = true; TR_ISLEMCI.isci = null; for (const b of TR_ISLEMCI.bekleyen.values()) b({ hata: 'işçi' }); TR_ISLEMCI.bekleyen.clear(); };
+    TR_ISLEMCI.isci = w;
+  } catch (e) { TR_ISLEMCI.olmadi = true; }
+  return TR_ISLEMCI.isci;
+}
+async function trIsleCanvas(kc, kose, tur) {
+  const isci = trIslemciKur();
+  if (isci) {
+    const im = kc.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, kc.width, kc.height);
+    const no = ++TR_ISLEMCI.no;
+    const r = await new Promise(res => { TR_ISLEMCI.bekleyen.set(no, res); isci.postMessage({ no, src: im.data.buffer, kw: kc.width, kh: kc.height, kose, tur }, [im.data.buffer]); });
+    if (r && !r.hata) {
+      const out = trCanvas(r.W, r.H);
+      out.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(r.dst), r.W, r.H), 0, 0);
+      return out;
+    }
+  }
+  return trFiltre(trDuzlestir(kc, kose), tur);
+}
 async function trIsle(sf) {
   const benim = (sf.surum = (sf.surum || 0) + 1);
   sf.hazir = false; TR.isleniyor++; trBoya();
@@ -16857,9 +16970,8 @@ async function trIsle(sf) {
     await trBekle(16);
     const kc = await trKaynakCanvas(sf);
     if (benim !== sf.surum) return;
-    let out = trDuzlestir(kc, sf.kose);
+    let out = await trIsleCanvas(kc, sf.kose, sf.filtre);
     kc.width = kc.height = 0;
-    out = trFiltre(out, sf.filtre);
     const blob = await trBlob(out, 0.85);
     const kucuk = trCanvas(110, Math.round(110 * out.height / out.width));
     kucuk.getContext('2d').drawImage(out, 0, 0, kucuk.width, kucuk.height);
@@ -16971,12 +17083,15 @@ async function trCekCanli(oto) {
   const cx = c.getContext('2d'); cx.imageSmoothingQuality = 'high';
   cx.drawImage(v, 0, 0, c.width, c.height);
   const flas = document.querySelector('#trFlas'); if (flas) { flas.classList.remove('on'); void flas.offsetWidth; flas.classList.add('on'); }
-  OTO.bekle = true; OTO.iz = trIz(v); OTO.izBas = performance.now(); OTO.farkSay = 0; OTO.sabit = 0;
+  trDeklansorSesi();
+  OTO.bekle = true; OTO.iz = OTO.sonIz || null; OTO.izBas = performance.now(); OTO.farkBas = 0; OTO.sabit = 0;
   const yedek = OTO.kose ? OTO.kose.map(q => q.slice()) : null;
   const yerine = TR.yenile; TR.yenile = -1;
   if (oto && yerine < 0) {
     trMesaj((TR.sayfalar.length + 1) + '. sayfa çekildi');
     await trFotoAl(c, -1, yedek);
+    // işleme sırasında geçen süre "sayfa kayboldu" sayılmasın
+    OTO.sonGorulme = performance.now(); OTO.izBas = performance.now(); OTO.iz = null;
   } else {
     trEkran('duzen');
     await trFotoAl(c, yerine, yedek);
@@ -16985,84 +17100,176 @@ async function trCekCanli(oto) {
 }
 
 /* ---------------- canlı kenar yakalama + otomatik çekim ---------------- */
-const OTO = { acik: true, kose: null, ham: null, sabit: 0, kayip: 0, bekle: false, iz: null, cekiliyor: false };
+const OTO = { acik: true, kose: null, ham: null, sabit: 0, kayip: 0, bekle: false, iz: null, cekiliyor: false, goster: null, ilerleme: 0, aykiri: 0 };
 try { OTO.acik = localStorage.getItem('pdfDuzenleme.tara.oto') !== '0'; } catch (e) { }
-function trIz(v) {
-  // görüntünün küçük gri izi: aynı sayfa mı, yeni sayfa mı anlamak için
+const TR_CANLI_EN = 320, TR_SABIT_BEKLE = 150, TR_SABIT_SURE = 800;
+
+/* yakalama ayrı bir işçide (worker) yapılır: kamera görüntüsü ve çerçeve takılmadan akar */
+const TR_ISCI = { isci: null, mesgul: false, no: 0, olmadi: false, bas: 0 };
+function trIsciKur() {
+  if (TR_ISCI.isci || TR_ISCI.olmadi) return TR_ISCI.isci;
   try {
-    const c = trCanvas(32, 32), cx = c.getContext('2d', { willReadFrequently: true });
-    cx.drawImage(v, 0, 0, 32, 32);
-    const d = cx.getImageData(0, 0, 32, 32).data, iz = new Float32Array(1024);
-    for (let i = 0; i < 1024; i++) iz[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
-    return iz;
-  } catch (e) { return null; }
+    const fs = [trSirala, trAlan, trDisbukey, trBulanik, trCanny, trGenislet, trZarf, trEnBuyukDortgen, trKenarDestek, trAciOk, trBolgeAdaylari, trKenarBulGri, trKenarBulParlak, trHoughAdaylari];
+    const kod = "'use strict';const TR_SINIR_ESIK=" + TR_SINIR_ESIK + ",TR_KONTRAST_ESIK=" + TR_KONTRAST_ESIK + ";\n" + fs.map(f => f.toString()).join('\n') +
+      "\nonmessage=function(e){var d=e.data,p=new Uint8ClampedArray(d.rgba),n=d.w*d.h,g=new Float32Array(n);" +
+      "for(var i=0,j=0;i<n;i++,j+=4)g[i]=p[j]*0.299+p[j+1]*0.587+p[j+2]*0.114;" +
+      "var k=null;try{k=trKenarBulGri(g,d.w,d.h,d.onceki,true);}catch(h){}postMessage({no:d.no,k:k});};";
+    const url = URL.createObjectURL(new Blob([kod], { type: 'text/javascript' }));
+    const w = new Worker(url);
+    w.onmessage = e => { TR_ISCI.mesgul = false; TR.canliSure = performance.now() - TR_ISCI.bas; trCanliSonuc(e.data.k); };
+    w.onerror = () => { TR_ISCI.olmadi = true; TR_ISCI.isci = null; TR_ISCI.mesgul = false; try { w.terminate(); } catch (h) { } trCanliDongu(); };
+    TR_ISCI.isci = w;
+  } catch (e) { TR_ISCI.olmadi = true; TR_ISCI.isci = null; }
+  return TR_ISCI.isci;
+}
+/* kameradan küçük bir kare alır (+ sayfa değişti mi anlamak için 32x32 gri iz) */
+function trKareAl(v) {
+  const o = Math.min(1, TR_CANLI_EN / Math.max(v.videoWidth, v.videoHeight));
+  const w = Math.max(16, Math.round(v.videoWidth * o)), h = Math.max(16, Math.round(v.videoHeight * o));
+  const c = TR.kareC || (TR.kareC = document.createElement('canvas'));
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; TR.kareCx = null; }
+  const cx = TR.kareCx || (TR.kareCx = c.getContext('2d', { willReadFrequently: true }));
+  cx.drawImage(v, 0, 0, w, h);
+  const im = cx.getImageData(0, 0, w, h), d = im.data, iz = new Float32Array(1024);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    const j = ((((y + 0.5) * h / 32) | 0) * w + (((x + 0.5) * w / 32) | 0)) * 4;
+    iz[y * 32 + x] = d[j] * 0.299 + d[j + 1] * 0.587 + d[j + 2] * 0.114;
+  }
+  return { im, w, h, iz };
 }
 function trIzFark(a, b) { let t = 0; for (let i = 0; i < 1024; i++) t += Math.abs(a[i] - b[i]); return t / 1024; }
-function trCanliCiz(kose, sabit) {
-  const pol = trKutu && trKutu.querySelector('#trCanliCokgen'); if (!pol) return;
-  const v = trKutu.querySelector('#trVideo'), sahne = v.parentElement;
-  if (!kose || !v.videoWidth) { pol.setAttribute('points', ''); pol.classList.remove('on', 'sabit'); return; }
-  const r = sahne.getBoundingClientRect(), o = Math.min(r.width / v.videoWidth, r.height / v.videoHeight);
-  const w = v.videoWidth * o, h = v.videoHeight * o, x0 = (r.width - w) / 2, y0 = (r.height - h) / 2;
-  pol.setAttribute('points', kose.map(q => (x0 + q[0] * w).toFixed(1) + ',' + (y0 + q[1] * h).toFixed(1)).join(' '));
-  pol.classList.add('on'); pol.classList.toggle('sabit', !!sabit);
-}
-function trIpucu(m) { const e = trKutu && trKutu.querySelector('#trIpucu'); if (e && e.textContent !== m) e.textContent = m; }
 function trCanliDongu() {
   clearTimeout(TR.canliT);
-  if (!trKutu || trKutu.hidden || TR.ekran !== 'kamera' || !TR.akis) { trCanliCiz(null); return; }
+  if (!trKutu || trKutu.hidden || TR.ekran !== 'kamera' || !TR.akis) return;
   const v = trKutu.querySelector('#trVideo');
-  if (v.videoWidth && v.readyState >= 2) {
-    const t0 = performance.now();
-    let k = null; try { k = trKenarBul(v, 340, OTO.ham || OTO.kose); } catch (e) { k = null; }
-    const simdi = performance.now(); TR.canliSure = simdi - t0;
-    if (k) TR.sonBulma = simdi; else if (!TR.sonBulma) TR.sonBulma = simdi;
-    // aykırı kare: oturmuş çerçeveden birden çok uzak bir bulgu hemen kabul edilmez; art arda
-    // birkaç karede sürerse (ya da daha büyük bir dörtgense, yani gerçek sayfa olabilirse) geçilir
-    if (k && OTO.ham) {
-      const u = Math.max.apply(null, k.map((q, i) => Math.hypot(q[0] - OTO.ham[i][0], q[1] - OTO.ham[i][1])));
-      if (u > 0.06) {
-        const buyuk = trAlan(k) > trAlan(OTO.ham) * 1.1;
-        OTO.aykiri = (OTO.aykiri || 0) + 1;
-        if (OTO.aykiri < (buyuk ? 2 : 4)) k = 'atla';
-      } else OTO.aykiri = 0;
-    }
-    if (k === 'atla') {
-      // bu kare yok sayılır: ne sabitlik bozulur ne çerçeve kaçar
-    } else if (k) {
-      OTO.aykiri = 0;
-      const hareket = OTO.ham ? Math.max.apply(null, k.map((q, i) => Math.hypot(q[0] - OTO.ham[i][0], q[1] - OTO.ham[i][1]))) : 1;
-      OTO.ham = k; OTO.kayip = 0;
-      OTO.kose = OTO.kose ? OTO.kose.map((q, i) => [q[0] * 0.55 + k[i][0] * 0.45, q[1] * 0.55 + k[i][1] * 0.45]) : k;
-      if (hareket < 0.028) { if (!OTO.sabit) OTO.sabit = simdi; } else OTO.sabit = 0;
-    } else {
-      // tek karelik kaçırma sabitliği bozmasın (zor zeminde bazı kareler bulunamayabilir)
-      OTO.kayip++;
-      if (OTO.kayip >= 2) { OTO.sabit = 0; OTO.ham = null; }
-      if (OTO.kayip >= 3) OTO.kose = null;
-    }
-    // aynı sayfa ikinci kez çekilmesin: sayfa çerçeveden çıkana ya da değişene kadar beklenir
-    if (OTO.bekle) {
-      if (OTO.kayip >= 3) OTO.bekle = false;
-      else {
-        const iz = trIz(v);
-        // çekimden hemen sonraki kısa sürede görüntü oturana kadar kıyas izi tazelenir;
-        // sonra görüntü art arda birkaç karede belirgin değişirse (yeni sayfa) beklemeden çıkılır
-        if (simdi - (OTO.izBas || 0) < 700) OTO.iz = iz || OTO.iz;
-        else if (iz && OTO.iz) { OTO.farkSay = trIzFark(iz, OTO.iz) > 12 ? (OTO.farkSay || 0) + 1 : 0; if (OTO.farkSay >= 3) OTO.bekle = false; }
-      }
-    }
-    const sure = OTO.sabit ? simdi - OTO.sabit : 0;
-    trCanliCiz(OTO.kose, OTO.acik && !OTO.bekle && sure > 450);
-    trIpucu(!OTO.kose ? (simdi - TR.sonBulma > 4000 ? 'Dört köşe görünsün; mümkünse koyu bir zemine koyun' : 'Belge aranıyor…') : OTO.bekle ? 'Sonraki sayfayı yerleştirin' :
-      OTO.acik ? (sure > 450 ? 'Sabit tutun, çekiliyor…' : 'Belge bulundu, sabit tutun') : 'Belge bulundu, Çek\'e dokunun');
-    if (OTO.acik && !OTO.bekle && !OTO.cekiliyor && OTO.kose && sure > 1000 && TR.sayfalar.length < TR.EN_COK) {
-      OTO.cekiliyor = true;
-      trCekCanli(true).catch(() => { }).then(() => { OTO.cekiliyor = false; });
+  if (!v.videoWidth || v.readyState < 2) { TR.canliT = setTimeout(trCanliDongu, 100); return; }
+  const isci = trIsciKur();
+  if (isci && TR_ISCI.mesgul) {
+    // işçi takılırsa ana akışa geçilir
+    if (performance.now() - TR_ISCI.bas > 3000) { TR_ISCI.olmadi = true; try { isci.terminate(); } catch (e) { } TR_ISCI.isci = null; TR_ISCI.mesgul = false; }
+    TR.canliT = setTimeout(trCanliDongu, 25); return;
+  }
+  let K; try { K = trKareAl(v); } catch (e) { TR.canliT = setTimeout(trCanliDongu, 200); return; }
+  OTO.sonIz = K.iz;
+  const onceki = OTO.ham || OTO.kose;
+  if (TR_ISCI.isci) {
+    TR_ISCI.mesgul = true; TR_ISCI.bas = performance.now();
+    TR_ISCI.isci.postMessage({ no: ++TR_ISCI.no, rgba: K.im.data.buffer, w: K.w, h: K.h, onceki }, [K.im.data.buffer]);
+  } else {
+    const t0 = performance.now(), d = K.im.data, n = K.w * K.h, g = new Float32Array(n);
+    for (let i = 0, j = 0; i < n; i++, j += 4) g[i] = d[j] * 0.299 + d[j + 1] * 0.587 + d[j + 2] * 0.114;
+    let k = null; try { k = trKenarBulGri(g, K.w, K.h, onceki, true); } catch (e) { k = null; }
+    TR.canliSure = performance.now() - t0;
+    trCanliSonuc(k);
+  }
+}
+function trCanliSonuc(k) {
+  if (!trKutu || trKutu.hidden || TR.ekran !== 'kamera' || !TR.akis) return;
+  const simdi = performance.now();
+  if (k) TR.sonBulma = simdi; else if (!TR.sonBulma) TR.sonBulma = simdi;
+  // süreler kare sayısına değil zamana bağlıdır: hızlı telefonda da yavaşta da aynı davranır
+  // aykırı kare: oturmuş çerçeveden birden çok uzak bir bulgu hemen kabul edilmez; bir süre
+  // sürerse (daha büyük bir dörtgense, yani gerçek sayfa olabilirse daha çabuk) geçilir
+  if (k && OTO.ham) {
+    const u = Math.max.apply(null, k.map((q, i) => Math.hypot(q[0] - OTO.ham[i][0], q[1] - OTO.ham[i][1])));
+    if (u > 0.06) {
+      const buyuk = trAlan(k) > trAlan(OTO.ham) * 1.1;
+      if (!OTO.aykiriBas) OTO.aykiriBas = simdi;
+      if (simdi - OTO.aykiriBas < (buyuk ? 150 : 350)) k = 'atla';
+    } else OTO.aykiriBas = 0;
+  }
+  if (k === 'atla') {
+    // bu kare yok sayılır: ne sabitlik bozulur ne çerçeve kaçar
+  } else if (k) {
+    OTO.aykiriBas = 0;
+    const hareket = OTO.ham ? Math.max.apply(null, k.map((q, i) => Math.hypot(q[0] - OTO.ham[i][0], q[1] - OTO.ham[i][1]))) : 1;
+    OTO.ham = k; OTO.sonGorulme = simdi; OTO.kayip = 0;
+    OTO.kose = OTO.kose ? OTO.kose.map((q, i) => [q[0] * 0.5 + k[i][0] * 0.5, q[1] * 0.5 + k[i][1] * 0.5]) : k;
+    if (hareket < 0.028) { if (!OTO.sabit) OTO.sabit = simdi; } else OTO.sabit = 0;
+  } else {
+    // kısa kaçırmalar sabitliği bozmasın (zor zeminde bazı kareler bulunamayabilir)
+    const yok = simdi - (OTO.sonGorulme || 0);
+    OTO.kayip = yok;
+    if (yok > 260) { OTO.sabit = 0; OTO.ham = null; }
+    if (yok > 420) OTO.kose = null;
+  }
+  // aynı sayfa ikinci kez çekilmesin: sayfa çerçeveden çıkana ya da görüntü belirgin değişene kadar beklenir
+  // (çekilen sayfa işlenirken ana akış meşgul olabilir; o sırada bekleme bozulmaz)
+  if (OTO.bekle && !OTO.cekiliyor) {
+    if (!OTO.sonGorulme || simdi - OTO.sonGorulme > 1500) OTO.bekle = false;
+    else if (OTO.sonIz) {
+      // çekimden hemen sonraki kısa sürede görüntü oturana kadar kıyas izi tazelenir;
+      // sonra görüntü bir süre belirgin değişik kalırsa (yeni sayfa) beklemeden çıkılır
+      if (simdi - (OTO.izBas || 0) < 700 || !OTO.iz) { OTO.iz = OTO.sonIz; OTO.farkBas = 0; }
+      else if (trIzFark(OTO.sonIz, OTO.iz) > 25) { if (!OTO.farkBas) OTO.farkBas = simdi; else if (simdi - OTO.farkBas > 300) OTO.bekle = false; }
+      else OTO.farkBas = 0;
     }
   }
-  // yavaş telefonda işlemciyi boğmamak için bekleme, bulma süresine göre uzar
-  TR.canliT = setTimeout(trCanliDongu, Math.max(110, Math.min(400, (TR.canliSure || 0) * 1.6)));
+  // sıradaki kare: işçide hemen; işçi yoksa işlemciyi boğmamak için biraz beklenir
+  TR.canliT = setTimeout(trCanliDongu, TR_ISCI.isci ? 8 : Math.max(60, Math.min(300, (TR.canliSure || 0) * 0.8)));
+}
+/* ekran yenileme hızında çizim: çerçeve sayfayı akıcı izler, halka dolar, dolunca çeker */
+function trCizimDongu() {
+  TR.cizimId = 0;
+  if (!trKutu || trKutu.hidden || TR.ekran !== 'kamera') { trCanliCiz(null); trHalka(0); trOrtaMesaj(''); return; }
+  TR.cizimId = requestAnimationFrame(trCizimDongu);
+  const h = OTO.kose;
+  if (h && TR.akis) OTO.goster = OTO.goster ? OTO.goster.map((q, i) => [q[0] + (h[i][0] - q[0]) * 0.32, q[1] + (h[i][1] - q[1]) * 0.32]) : h.map(q => q.slice());
+  else OTO.goster = null;
+  trCanliCiz(OTO.goster);
+  const simdi = performance.now();
+  let il = 0;
+  if (TR.akis && OTO.acik && OTO.kose && OTO.sabit && !OTO.bekle && !OTO.cekiliyor) il = Math.min(1, Math.max(0, (simdi - OTO.sabit - TR_SABIT_BEKLE) / TR_SABIT_SURE));
+  OTO.ilerleme = il >= OTO.ilerleme ? il : Math.max(il, OTO.ilerleme - 0.06);
+  trHalka(OTO.ilerleme);
+  trOrtaMesaj(il > 0 ? 'Yakalanıyor… Sabit tutun' : '');
+  if (TR.akis) trIpucu(!OTO.kose ? (simdi - (TR.sonBulma || simdi) > 4000 ? 'Dört köşe görünsün; mümkünse koyu bir zemine koyun' : 'Belge aranıyor…') :
+    OTO.bekle ? 'Sonraki sayfayı yerleştirin' : !OTO.acik ? 'Belge bulundu, çekmek için dokunun' : il > 0 ? '' : 'Belge bulundu');
+  if (il >= 1 && !OTO.cekiliyor && TR.sayfalar.length < TR.EN_COK) {
+    OTO.cekiliyor = true; OTO.ilerleme = 0;
+    trCekCanli(true).catch(() => { }).then(() => { OTO.cekiliyor = false; });
+  }
+}
+function trCanliCiz(kose) {
+  const pol = trKutu && trKutu.querySelector('#trCanliCokgen'); if (!pol) return;
+  const v = trKutu.querySelector('#trVideo'), sahne = v.parentElement;
+  if (!kose || !v.videoWidth) { if (pol.getAttribute('points')) { pol.setAttribute('points', ''); pol.classList.remove('on'); } return; }
+  const r = sahne.getBoundingClientRect(), o = Math.min(r.width / v.videoWidth, r.height / v.videoHeight);
+  const w = v.videoWidth * o, hh = v.videoHeight * o, x0 = (r.width - w) / 2, y0 = (r.height - hh) / 2;
+  pol.setAttribute('points', kose.map(q => (x0 + q[0] * w).toFixed(1) + ',' + (y0 + q[1] * hh).toFixed(1)).join(' '));
+  pol.classList.add('on');
+}
+function trHalka(il) {
+  const y = trKutu && trKutu.querySelector('#trHalkaYay'); if (!y) return;
+  const v = (289.03 * (1 - il)).toFixed(1);
+  if (y.getAttribute('stroke-dashoffset') !== v) { y.setAttribute('stroke-dashoffset', v); y.style.opacity = il > 0.01 ? '1' : '0'; }
+}
+function trOrtaMesaj(m) {
+  const e = trKutu && trKutu.querySelector('#trOrtaMesaj'); if (!e) return;
+  if (m) { if (e.textContent !== m) e.textContent = m; e.classList.add('on'); } else e.classList.remove('on');
+}
+function trIpucu(m) { const e = trKutu && trKutu.querySelector('#trIpucu'); if (e && e.textContent !== m) e.textContent = m; }
+/* deklanşör sesi: programın içinde üretilir (dosya gerekmez); telefon sessizdeyse çalmaz */
+function trSesHazirla() {
+  try {
+    if (!TR.sesC) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; TR.sesC = new AC(); }
+    if (TR.sesC.state === 'suspended') TR.sesC.resume();
+    const b = TR.sesC.createBuffer(1, 1, 22050), k = TR.sesC.createBufferSource(); k.buffer = b; k.connect(TR.sesC.destination); k.start(0);
+  } catch (e) { }
+}
+function trDeklansorSesi() {
+  try {
+    const c = TR.sesC; if (!c) return; if (c.state === 'suspended') c.resume();
+    const t = c.currentTime + 0.01;
+    [[0, 0.9, 3400], [0.08, 0.6, 2300]].forEach(([g, v, f]) => {
+      const L = Math.floor(c.sampleRate * 0.045), b = c.createBuffer(1, L, c.sampleRate), a = b.getChannelData(0);
+      for (let i = 0; i < L; i++) a[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / L, 5);
+      const k = c.createBufferSource(); k.buffer = b;
+      const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 0.9;
+      const ka = c.createGain(); ka.gain.value = v;
+      k.connect(bp); bp.connect(ka); ka.connect(c.destination); k.start(t + g);
+    });
+  } catch (e) { }
 }
 function trOtoBoya() {
   const b = trKutu && trKutu.querySelector('#trOtoDug'); if (!b) return;
@@ -17150,28 +17357,39 @@ function trKur() {
     '<div class="tr-ekran" data-e="kamera"><div class="tr-sahne">' +
     '<video id="trVideo" playsinline muted autoplay></video><div id="trFlas"></div>' +
     '<svg id="trCanliCizgi"><polygon id="trCanliCokgen"/></svg>' +
+    '<div class="tr-orta" id="trOrtaMesaj"></div>' +
     '<button type="button" class="tr-oto" id="trOtoDug" hidden><i></i><span>Otomatik çekim: Açık</span></button>' +
     '<div class="tr-bos" id="trKameraYok" hidden></div>' +
     '<div class="tr-ipucu" id="trIpucu">Kamera açılıyor…</div></div>' +
     '<div class="tr-kalt"><button type="button" class="tr-yuvarlak" id="trGaleri">' + trSvg(TR_IK.galeri) + '<span>Galeri</span></button>' +
-    '<button type="button" class="tr-deklansor" id="trCek" aria-label="Çek"><i></i></button>' +
-    '<button type="button" class="tr-yuvarlak" id="trBitti"><span class="tr-kucukresim" id="trSonKucuk"></span><span id="trBittiYazi">Bitti</span></button></div></div>' +
+    '<button type="button" class="tr-deklansor" id="trCek" aria-label="Çek"><svg class="tr-halka" viewBox="0 0 100 100" aria-hidden="true">' +
+    '<circle class="tr-halka-iz" cx="50" cy="50" r="46"/><circle id="trHalkaYay" class="tr-halka-yay" cx="50" cy="50" r="46" stroke-dasharray="289.03" stroke-dashoffset="289.03"/></svg><i></i></button>' +
+    '<button type="button" class="tr-yuvarlak tr-sonsayfa" id="trBitti" aria-label="Taranan sayfalar"><span class="tr-kucukresim" id="trSonKucuk"><b id="trRozet"></b></span><span id="trBittiYazi"></span></button></div></div>' +
     // düzen
-    '<div class="tr-ekran" data-e="duzen"><div class="tr-sahne"><img id="trSonuc" alt=""><div class="tr-bekle" id="trBekle"><i></i></div></div>' +
+    '<div class="tr-ekran" data-e="duzen"><div class="tr-sahne" id="trDuzenSahne"><img id="trSonuc" alt="">' +
+    '<div class="tr-cerceve" id="trCerceve" hidden>' +
+    '<i class="tr-ck" data-k="0"></i><i class="tr-ck" data-k="1"></i><i class="tr-ck" data-k="2"></i><i class="tr-ck" data-k="3"></i>' +
+    '<i class="tr-cs tr-cs-y" data-s="0"></i><i class="tr-cs tr-cs-d" data-s="1"></i><i class="tr-cs tr-cs-y" data-s="2"></i><i class="tr-cs tr-cs-d" data-s="3"></i></div>' +
+    '<div class="tr-bekle" id="trBekle"><i></i></div></div>' +
+    '<div class="tr-sayfanav"><button type="button" class="tr-navok" id="trOnceki" aria-label="Önceki sayfa">' + trSvg('<path d="M14.5 5.5L8 12l6.5 6.5"/>') + '</button>' +
+    '<button type="button" class="tr-sayfapil" id="trSayfaDug"><span id="trSayfaYazi">Sayfa 1/1</span>' + trSvg('<path d="M7 14.5l5-5 5 5"/>') + '</button>' +
+    '<button type="button" class="tr-navok" id="trSonraki" aria-label="Sonraki sayfa">' + trSvg('<path d="M9.5 5.5L16 12l-6.5 6.5"/>') + '</button></div>' +
+    '<div class="tr-serit" id="trSerit" hidden></div>' +
     '<div class="tr-filtre" id="trFiltre">' + TR_FILTRE.map(f => '<button type="button" data-f="' + f[0] + '">' + f[1] + '</button>').join('') + '</div>' +
     '<div class="tr-arac">' +
     '<button type="button" id="trYeniden">' + trSvg(TR_IK.yeniden) + '<span>Yeniden çek</span></button>' +
     '<button type="button" id="trKirp">' + trSvg(TR_IK.kirp) + '<span>Kırp</span></button>' +
     '<button type="button" id="trDondur">' + trSvg(TR_IK.dondur) + '<span>Döndür</span></button>' +
     '<button type="button" id="trSil">' + trSvg(TR_IK.sil) + '<span>Sil</span></button></div>' +
-    '<div class="tr-serit" id="trSerit"></div>' +
     '<div class="tr-dalt"><button type="button" class="tr-ikincil" id="trDevam">Taramaya devam et</button>' +
     '<button type="button" class="tr-birincil" id="trKaydet">PDF\'yi kaydet</button></div></div>' +
     // kırp
     '<div class="tr-ekran" data-e="kirp"><div class="tr-sahne" id="trKirpSahne"><img id="trKaynak" alt="">' +
     '<svg id="trCizgi"><polygon id="trCokgen"/></svg>' +
-    '<div class="tr-tutamak" data-i="0"></div><div class="tr-tutamak" data-i="1"></div><div class="tr-tutamak" data-i="2"></div><div class="tr-tutamak" data-i="3"></div></div>' +
-    '<div class="tr-ipucu tr-ipucu-alt">Köşeleri sürükleyerek sayfanın kenarlarına oturtun.</div>' +
+    '<div class="tr-kenar" data-s="0"></div><div class="tr-kenar" data-s="1"></div><div class="tr-kenar" data-s="2"></div><div class="tr-kenar" data-s="3"></div>' +
+    '<div class="tr-tutamak" data-i="0"></div><div class="tr-tutamak" data-i="1"></div><div class="tr-tutamak" data-i="2"></div><div class="tr-tutamak" data-i="3"></div>' +
+    '<canvas id="trBuyutec" width="240" height="240" hidden></canvas></div>' +
+    '<div class="tr-ipucu tr-ipucu-alt">Köşeleri ya da kenarları sürükleyerek sayfaya oturtun.</div>' +
     '<div class="tr-arac"><button type="button" id="trOto">' + trSvg('<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><circle cx="12" cy="12" r="2.4"/>') + '<span>Otomatik bul</span></button>' +
     '<button type="button" id="trTum">' + trSvg('<rect x="4" y="4" width="16" height="16" rx="1"/>') + '<span>Tüm fotoğraf</span></button></div>' +
     '<div class="tr-dalt"><button type="button" class="tr-ikincil" id="trKirpVaz">Vazgeç</button>' +
@@ -17195,7 +17413,7 @@ function trKur() {
   const $k = s => k.querySelector(s);
 
   $k('#trKapat').addEventListener('click', () => trKapat(false));
-  $k('#trCek').addEventListener('click', () => trCek());
+  $k('#trCek').addEventListener('click', () => { trSesHazirla(); trCek(); });
   $k('#trOtoDug').addEventListener('click', () => {
     OTO.acik = !OTO.acik; OTO.sabit = 0;
     try { localStorage.setItem('pdfDuzenleme.tara.oto', OTO.acik ? '1' : '0'); } catch (e) { }
@@ -17224,13 +17442,36 @@ function trKur() {
     const t = e.target.closest('.tr-sk'); if (!t) return;
     TR.aktif = +t.dataset.i; trBoya();
   });
+  $k('#trOnceki').addEventListener('click', () => trSayfaGec(-1));
+  $k('#trSonraki').addEventListener('click', () => trSayfaGec(1));
+  $k('#trSayfaDug').addEventListener('click', () => { TR.seritAcik = !TR.seritAcik; trBoya(); });
+  $k('#trSonuc').addEventListener('load', () => trCerceveYerlestir());
+  // sonuç sayfasındaki çerçeve tutamağına dokununca kırpmaya geçilir, sürükleme kesilmeden sürer
+  $k('#trCerceve').addEventListener('pointerdown', e => {
+    const t = e.target.closest('.tr-ck, .tr-cs'); if (!t || !TR.sayfalar[TR.aktif]) return;
+    e.preventDefault(); e.stopPropagation();
+    try { trKutu.setPointerCapture(e.pointerId); } catch (h) { }
+    trKirpAc(t.classList.contains('tr-ck') ? { tip: 'kose', i: +t.dataset.k, e } : { tip: 'kenar', i: +t.dataset.s, e });
+  });
+  // sayfayı sağa/sola kaydırarak sayfalar arasında geçiş
+  (() => {
+    let b = null;
+    const sahne = $k('#trDuzenSahne');
+    sahne.addEventListener('pointerdown', e => { if (e.target.closest('.tr-ck, .tr-cs')) return; b = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
+    sahne.addEventListener('pointerup', e => {
+      if (!b || e.pointerId !== b.id) return;
+      const dx = e.clientX - b.x, dy = e.clientY - b.y; b = null;
+      if (Math.abs(dx) > 60 && Math.abs(dy) < 80) trSayfaGec(dx < 0 ? 1 : -1);
+    });
+    sahne.addEventListener('pointercancel', () => { b = null; });
+  })();
 
   $k('#trOto').addEventListener('click', async () => {
     const sf = TR.sayfalar[TR.aktif]; if (!sf || !TR.kirp) return;
     const kc = await trKaynakCanvas(sf); const b = trKenarBul(kc); kc.width = kc.height = 0;
-    if (b) { TR.kirp.kose = b; trKirpCiz(); } else trMesaj('Kenarlar bulunamadı; köşeleri elle yerleştirin.');
+    if (b) { TR.kirp.kose = b; trKirpGorunum(false); trKirpCiz(); } else trMesaj('Kenarlar bulunamadı; köşeleri elle yerleştirin.');
   });
-  $k('#trTum').addEventListener('click', () => { if (TR.kirp) { TR.kirp.kose = trTamKose(0); trKirpCiz(); } });
+  $k('#trTum').addEventListener('click', () => { if (TR.kirp) { TR.kirp.kose = trTamKose(0); trKirpGorunum(true); trKirpCiz(); } });
   $k('#trKirpVaz').addEventListener('click', () => { TR.kirp = null; trEkran('duzen'); });
   $k('#trKirpTamam').addEventListener('click', () => {
     const sf = TR.sayfalar[TR.aktif]; if (!sf || !TR.kirp) return;
@@ -17249,7 +17490,7 @@ function trKur() {
   $k('#trSorHayir').addEventListener('click', () => { $k('#trSor').hidden = true; });
   $k('#trSorEvet').addEventListener('click', () => { $k('#trSor').hidden = true; trKapat(true); });
 
-  window.addEventListener('resize', () => { if (TR.ekran === 'kirp') trKirpCiz(); });
+  window.addEventListener('resize', () => { if (TR.ekran === 'kirp') { trKirpGorunum(TR.kirpTam); trKirpCiz(); } if (TR.ekran === 'duzen') trCerceveYerlestir(); });
   // telefon arka plana alınıp dönünce kamera kapanmış olabilir: yeniden açılır
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && trKutu && !trKutu.hidden && TR.ekran === 'kamera' && TR.akis && !trAkisCanli()) trKameraEkrani();
@@ -17275,8 +17516,9 @@ function trEkran(ad) {
   if (ad === 'kamera' && TR.akis) {
     if (v.srcObject !== TR.akis) v.srcObject = TR.akis;
     v.play().catch(() => { });
-    OTO.kose = null; OTO.ham = null; OTO.sabit = 0; OTO.kayip = 0; OTO.aykiri = 0; TR.sonBulma = 0;
+    OTO.kose = null; OTO.ham = null; OTO.goster = null; OTO.sabit = 0; OTO.kayip = 0; OTO.aykiriBas = 0; OTO.sonGorulme = 0; OTO.ilerleme = 0; TR.sonBulma = 0;
     trCanliDongu();
+    if (!TR.cizimId) TR.cizimId = requestAnimationFrame(trCizimDongu);
   } else if (v && !v.paused) v.pause();
   if (ad !== 'kamera') trCanliCiz(null);
   trOtoBoya();
@@ -17309,13 +17551,20 @@ function trBoya() {
   // kamera ekranı: son sayfa küçük resmi
   const son = TR.sayfalar[n - 1];
   $k('#trSonKucuk').style.backgroundImage = son && son.kucuk ? 'url(' + son.kucuk + ')' : '';
+  $k('#trRozet').textContent = n ? String(n) : '';
   $k('#trBitti').style.visibility = n ? 'visible' : 'hidden';
-  $k('#trBittiYazi').textContent = TR.yenile >= 0 ? 'Vazgeç' : 'Bitti';
+  $k('#trBittiYazi').textContent = TR.yenile >= 0 ? 'Vazgeç' : '';
   // düzen ekranı
   if (TR.ekran === 'duzen') {
     const img = $k('#trSonuc');
-    if (sf && sf.hazir && sf.sonucUrl) { if (img.getAttribute('src') !== sf.sonucUrl) img.src = sf.sonucUrl; img.hidden = false; }
+    if (sf && sf.hazir && sf.sonucUrl) { if (img.getAttribute('src') !== sf.sonucUrl) img.src = sf.sonucUrl; else trCerceveYerlestir(); img.hidden = false; }
     else if (!sf) img.hidden = true;
+    $k('#trCerceve').hidden = !(sf && sf.hazir);
+    $k('#trSayfaYazi').textContent = 'Sayfa ' + (TR.aktif + 1) + '/' + n;
+    $k('#trOnceki').disabled = TR.aktif <= 0; $k('#trSonraki').disabled = TR.aktif >= n - 1;
+    $k('#trSayfaDug').classList.toggle('acik', !!TR.seritAcik);
+    $k('#trSerit').hidden = !TR.seritAcik;
+    if (sf) trKaynakOnYukle(sf);
     $k('#trBekle').hidden = !(sf && !sf.hazir && !sf.hata);
     for (const b of $k('#trFiltre').children) b.classList.toggle('sec', !!sf && b.dataset.f === sf.filtre);
     const s = $k('#trSerit');
@@ -17359,76 +17608,161 @@ function trSayfaSil(i) {
   trBoya();
 }
 
-/* ---------------- kırpma (köşe tutamakları) ---------------- */
-async function trKirpAc() {
+/* ---------------- sayfa geçişi + sonuç çerçevesi ---------------- */
+function trSayfaGec(d) {
+  const n = TR.sayfalar.length; if (!n) return;
+  const y = Math.min(n - 1, Math.max(0, TR.aktif + d)); if (y === TR.aktif) return;
+  TR.aktif = y; trBoya();
+}
+/* sonuç sayfasının üstündeki mavi çerçeve: görünen resmin tam kenarına oturur */
+function trCerceveYerlestir() {
+  if (!trKutu || TR.ekran !== 'duzen') return;
+  const img = trKutu.querySelector('#trSonuc'), c = trKutu.querySelector('#trCerceve'), sahne = trKutu.querySelector('#trDuzenSahne');
+  if (img.hidden || !img.naturalWidth) return;
+  const sr = sahne.getBoundingClientRect(), ir = img.getBoundingClientRect();
+  c.style.left = (ir.left - sr.left) + 'px'; c.style.top = (ir.top - sr.top) + 'px';
+  c.style.width = ir.width + 'px'; c.style.height = ir.height + 'px';
+}
+/* kırpma ekranı anında açılsın diye etkin sayfanın asıl fotoğrafı önceden yüklenir */
+function trKaynakOnYukle(sf) {
+  if (TR.onYuk && TR.onYuk.sf === sf && TR.onYuk.kaynak === sf.kaynak) return TR.onYuk;
+  if (TR.onYuk && TR.onYuk.url) URL.revokeObjectURL(TR.onYuk.url);
+  const url = URL.createObjectURL(sf.kaynak), im = new Image();
+  const o = { sf, kaynak: sf.kaynak, url, im, hazir: false };
+  o.soz = new Promise(r => { im.onload = () => { o.hazir = true; r(); }; im.onerror = () => r(); });
+  im.src = url;
+  TR.onYuk = o;
+  return o;
+}
+
+/* ---------------- kırpma (köşe ve kenar tutamakları, büyüteç) ---------------- */
+async function trKirpAc(bas) {
   const sf = TR.sayfalar[TR.aktif]; if (!sf) return;
   TR.kirp = { kose: sf.kose.map(q => q.slice()) };
+  const o = trKaynakOnYukle(sf);
+  if (!o.hazir) await o.soz;
+  if (!TR.kirp) return;
   const img = trKutu.querySelector('#trKaynak');
-  if (TR.kirpUrl) URL.revokeObjectURL(TR.kirpUrl);
-  TR.kirpUrl = URL.createObjectURL(sf.kaynak);
+  if (img.getAttribute('src') !== o.url) img.src = o.url;
+  if (!img.complete || !img.naturalWidth) await new Promise(r => { img.onload = r; img.onerror = r; });
   trEkran('kirp');
-  await new Promise(r => { img.onload = r; img.onerror = r; img.src = TR.kirpUrl; });
+  trKirpGorunum(false);
   trKirpCiz();
+  if (bas && bas.e) trSurukleBasla(bas.e, bas.tip, bas.i);
 }
-function trKirpKutu() {
+/* kırpma görünümü: sayfa ekranı doldursun diye dörtgenin çevresine yakınlaşılır */
+function trKirpGorunum(tam) {
   const img = trKutu.querySelector('#trKaynak'), sahne = trKutu.querySelector('#trKirpSahne');
-  const sr = sahne.getBoundingClientRect(), ir = img.getBoundingClientRect();
-  const nw = img.naturalWidth || 1, nh = img.naturalHeight || 1;
-  const o = Math.min(ir.width / nw, ir.height / nh), w = nw * o, h = nh * o;
-  return { x: ir.left - sr.left + (ir.width - w) / 2, y: ir.top - sr.top + (ir.height - h) / 2, w, h };
+  const sw = sahne.clientWidth || 1, sh = sahne.clientHeight || 1, nw = img.naturalWidth || 1, nh = img.naturalHeight || 1;
+  let x0 = 0, y0 = 0, x1 = 1, y1 = 1;
+  TR.kirpTam = !!tam;
+  if (!tam && TR.kirp) {
+    const k = TR.kirp.kose;
+    x0 = Math.min(k[0][0], k[1][0], k[2][0], k[3][0]); x1 = Math.max(k[0][0], k[1][0], k[2][0], k[3][0]);
+    y0 = Math.min(k[0][1], k[1][1], k[2][1], k[3][1]); y1 = Math.max(k[0][1], k[1][1], k[2][1], k[3][1]);
+    const mx = (x1 - x0) * 0.1 + 0.025, my = (y1 - y0) * 0.1 + 0.025;
+    x0 = Math.max(0, x0 - mx); x1 = Math.min(1, x1 + mx); y0 = Math.max(0, y0 - my); y1 = Math.min(1, y1 + my);
+  }
+  const W = (x1 - x0) * nw, H = (y1 - y0) * nh, pay = 22;
+  const sc = Math.min((sw - pay * 2) / W, (sh - pay * 2) / H);
+  const ox = (sw - W * sc) / 2 - x0 * nw * sc, oy = (sh - H * sc) / 2 - y0 * nh * sc;
+  img.style.left = ox + 'px'; img.style.top = oy + 'px'; img.style.width = (nw * sc) + 'px'; img.style.height = (nh * sc) + 'px';
+  TR.kirpG = { s: sc, ox, oy, nw, nh };
 }
+function trKirpNokta(q) { const G = TR.kirpG; return [G.ox + q[0] * G.nw * G.s, G.oy + q[1] * G.nh * G.s]; }
 function trKirpCiz() {
-  if (!TR.kirp || !trKutu) return;
-  const b = trKirpKutu(), k = TR.kirp.kose;
-  const nokta = k.map(q => [b.x + q[0] * b.w, b.y + q[1] * b.h]);
+  if (!TR.kirp || !trKutu || !TR.kirpG) return;
+  const nokta = TR.kirp.kose.map(trKirpNokta);
   trKutu.querySelector('#trCokgen').setAttribute('points', nokta.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '));
-  for (const t of trKutu.querySelectorAll('.tr-tutamak')) {
-    const p = nokta[+t.dataset.i];
-    t.style.left = p[0] + 'px'; t.style.top = p[1] + 'px';
+  for (const t of trKutu.querySelectorAll('.tr-tutamak')) { const p = nokta[+t.dataset.i]; t.style.left = p[0] + 'px'; t.style.top = p[1] + 'px'; }
+  for (const t of trKutu.querySelectorAll('.tr-kenar')) {
+    const i = +t.dataset.s, a = nokta[i], b = nokta[(i + 1) % 4];
+    t.style.left = ((a[0] + b[0]) / 2) + 'px'; t.style.top = ((a[1] + b[1]) / 2) + 'px';
+    t.style.transform = 'translate(-50%,-50%) rotate(' + (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI).toFixed(1) + 'deg)';
   }
 }
+function trSurukleBasla(e, tip, i) {
+  if (!TR.kirp) return;
+  TR.surukle = { tip, i, id: e.pointerId, x0: e.clientX, y0: e.clientY, k0: TR.kirp.kose.map(q => q.slice()) };
+  try { trKutu.setPointerCapture(e.pointerId); } catch (h) { }
+  const el = tip === 'kose' ? trKutu.querySelectorAll('.tr-tutamak')[i] : trKutu.querySelectorAll('.tr-kenar')[i];
+  if (el) el.classList.add('tut');
+  if (tip === 'kose') trBuyutec(i);
+}
+/* büyüteç: sürüklenen köşenin çevresi büyütülerek parmağın üstünde gösterilir */
+function trBuyutec(i) {
+  const c = trKutu.querySelector('#trBuyutec'), img = trKutu.querySelector('#trKaynak');
+  if (i == null || !TR.kirp || !TR.kirpG) { c.hidden = true; return; }
+  const G = TR.kirpG, q = TR.kirp.kose[i], p = trKirpNokta(q), sahne = trKutu.querySelector('#trKirpSahne');
+  const BOY = 120, Z = 2.6, yari = BOY / 2 / (G.s * Z) * (img.naturalWidth / G.nw);
+  const cx = q[0] * img.naturalWidth, cy = q[1] * img.naturalHeight;
+  const x = c.getContext('2d'), olc = 240 / BOY;
+  x.fillStyle = '#000'; x.fillRect(0, 0, 240, 240);
+  try { x.drawImage(img, cx - yari, cy - yari, yari * 2, yari * 2, 0, 0, 240, 240); } catch (h) { }
+  // dörtgenin bu köşeye bağlı kenarları ve nişangâh
+  const donus = r => [(r[0] * img.naturalWidth - (cx - yari)) / (yari * 2) * 240, (r[1] * img.naturalHeight - (cy - yari)) / (yari * 2) * 240];
+  const k = TR.kirp.kose, a = donus(k[(i + 3) % 4]), m = donus(q), b = donus(k[(i + 1) % 4]);
+  x.strokeStyle = '#3b82f6'; x.lineWidth = 4; x.beginPath(); x.moveTo(a[0], a[1]); x.lineTo(m[0], m[1]); x.lineTo(b[0], b[1]); x.stroke();
+  x.strokeStyle = '#fff'; x.lineWidth = 2; x.beginPath(); x.moveTo(120, 96); x.lineTo(120, 144); x.moveTo(96, 120); x.lineTo(144, 120); x.stroke();
+  // konum: parmağın üstünde; üstte yer yoksa altında
+  const sw = sahne.clientWidth;
+  let lx = p[0] - BOY / 2, ly = p[1] - BOY - 56;
+  if (ly < 6) ly = p[1] + 56;
+  lx = Math.max(6, Math.min(sw - BOY - 6, lx));
+  c.style.left = lx + 'px'; c.style.top = ly + 'px'; c.hidden = false;
+  void olc;
+}
 function trTutamakBagla() {
-  let surukle = null;
   const sahne = trKutu.querySelector('#trKirpSahne');
+  const sinirla = v => Math.min(1, Math.max(0, v));
   sahne.addEventListener('pointerdown', e => {
-    if (!TR.kirp) return;
-    const b = trKirpKutu(), sr = sahne.getBoundingClientRect();
-    const px = e.clientX - sr.left, py = e.clientY - sr.top;
-    // en yakın köşe (parmakla tutmayı kolaylaştırmak için geniş alan)
-    let en = -1, enD = 1e9;
-    TR.kirp.kose.forEach((q, i) => { const d = Math.hypot(b.x + q[0] * b.w - px, b.y + q[1] * b.h - py); if (d < enD) { enD = d; en = i; } });
-    if (en < 0 || enD > 60) return;
+    if (!TR.kirp || !TR.kirpG) return;
+    const sr = sahne.getBoundingClientRect(), px = e.clientX - sr.left, py = e.clientY - sr.top;
+    // en yakın tutamak (köşeler öncelikli, parmakla tutmayı kolaylaştırmak için geniş alan)
+    const nokta = TR.kirp.kose.map(trKirpNokta);
+    let en = null, enD = 1e9;
+    nokta.forEach((q, i) => { const d = Math.hypot(q[0] - px, q[1] - py); if (d < enD) { enD = d; en = { tip: 'kose', i }; } });
+    if (enD > 34) nokta.forEach((a, i) => { const b = nokta[(i + 1) % 4], d = Math.hypot((a[0] + b[0]) / 2 - px, (a[1] + b[1]) / 2 - py); if (d < enD - 8) { enD = d; en = { tip: 'kenar', i }; } });
+    if (!en || enD > 54) return;
     e.preventDefault();
-    surukle = { i: en, id: e.pointerId };
-    try { sahne.setPointerCapture(e.pointerId); } catch (h) { }
-    trKutu.querySelectorAll('.tr-tutamak')[en].classList.add('tut');
+    trSurukleBasla(e, en.tip, en.i);
   });
-  sahne.addEventListener('pointermove', e => {
-    if (!surukle || e.pointerId !== surukle.id) return;
+  trKutu.addEventListener('pointermove', e => {
+    const S = TR.surukle; if (!S || e.pointerId !== S.id || !TR.kirp || !TR.kirpG) return;
     e.preventDefault();
-    const b = trKirpKutu(), sr = sahne.getBoundingClientRect();
-    const x = Math.min(1, Math.max(0, (e.clientX - sr.left - b.x) / b.w));
-    const y = Math.min(1, Math.max(0, (e.clientY - sr.top - b.y) / b.h));
-    TR.kirp.kose[surukle.i] = [x, y];
-    trKirpCiz();
+    const G = TR.kirpG, dx = (e.clientX - S.x0) / (G.nw * G.s), dy = (e.clientY - S.y0) / (G.nh * G.s);
+    const k = S.k0.map(q => q.slice());
+    if (S.tip === 'kose') k[S.i] = [sinirla(k[S.i][0] + dx), sinirla(k[S.i][1] + dy)];
+    else {
+      // kenar: iki ucu birlikte, kenara dik yönde kayar
+      const a = S.i, b = (S.i + 1) % 4;
+      const ax = (k[b][0] - k[a][0]) * G.nw, ay = (k[b][1] - k[a][1]) * G.nh, L = Math.hypot(ax, ay) || 1;
+      const nx = -ay / L, ny = ax / L, d = dx * G.nw * nx + dy * G.nh * ny;
+      const mx = nx * d / G.nw, my = ny * d / G.nh;
+      k[a] = [sinirla(k[a][0] + mx), sinirla(k[a][1] + my)]; k[b] = [sinirla(k[b][0] + mx), sinirla(k[b][1] + my)];
+    }
+    TR.kirp.kose = k; trKirpCiz();
+    if (S.tip === 'kose') trBuyutec(S.i);
   });
   const bitir = e => {
-    if (!surukle || (e && e.pointerId !== surukle.id)) return;
-    trKutu.querySelectorAll('.tr-tutamak')[surukle.i].classList.remove('tut');
-    surukle = null;
+    const S = TR.surukle; if (!S || (e && e.pointerId !== S.id)) return;
+    for (const t of trKutu.querySelectorAll('.tr-tutamak.tut, .tr-kenar.tut')) t.classList.remove('tut');
+    TR.surukle = null; trBuyutec(null);
   };
-  sahne.addEventListener('pointerup', bitir);
-  sahne.addEventListener('pointercancel', bitir);
+  trKutu.addEventListener('pointerup', bitir);
+  trKutu.addEventListener('pointercancel', bitir);
 }
 
 /* ---------------- aç / kapat ---------------- */
 function trTemizle() {
   for (const sf of TR.sayfalar) { sf.surum = (sf.surum || 0) + 1; if (sf.sonucUrl) URL.revokeObjectURL(sf.sonucUrl); }
-  TR.sayfalar = []; TR.aktif = -1; TR.yenile = -1; TR.kirp = null; TR.sonPdf = null; TR.sonAd = '';
+  TR.sayfalar = []; TR.aktif = -1; TR.yenile = -1; TR.kirp = null; TR.sonPdf = null; TR.sonAd = ''; TR.seritAcik = false; TR.surukle = null;
+  if (TR.onYuk && TR.onYuk.url) URL.revokeObjectURL(TR.onYuk.url); TR.onYuk = null;
   if (trKutu) { const s = trKutu.querySelector('#trSerit'); s.innerHTML = ''; s.dataset.son = ''; trKutu.querySelector('#trSonuc').removeAttribute('src'); }
 }
 function trAc() {
   trKur();
+  trSesHazirla();
   trTemizle();
   trKutu.hidden = false;
   document.documentElement.classList.add('tr-acik');
@@ -17490,9 +17824,11 @@ function trKapat(kesin) {
     '#trKutu .tr-kucukyazi{font-size:12.5px;color:#9ca3af}' +
     '#trKutu .tr-tekrar{height:44px;padding:0 26px;border-radius:22px;font-weight:700;cursor:pointer;margin-top:6px}' +
     '#trKutu #trCanliCizgi{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}' +
-    '#trKutu #trCanliCokgen{fill:rgba(37,99,235,.18);stroke:#3b82f6;stroke-width:3;stroke-linejoin:round;opacity:0;transition:opacity .15s}' +
+    '#trKutu #trCanliCokgen{fill:rgba(47,124,246,.16);stroke:#2f7cf6;stroke-width:5;stroke-linejoin:round;opacity:0;transition:opacity .2s}' +
     '#trKutu #trCanliCokgen.on{opacity:1}' +
-    '#trKutu #trCanliCokgen.sabit{fill:rgba(22,163,74,.22);stroke:#22c55e}' +
+    '#trKutu .tr-orta{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);background:rgba(17,17,17,.72);color:#fff;font-size:16.5px;font-weight:600;padding:11px 22px;border-radius:24px;white-space:nowrap;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;z-index:2}' +
+    '#trKutu .tr-orta.on{opacity:1;transform:translate(-50%,-50%) scale(1)}' +
+    '#trKutu .tr-ipucu:empty{display:none}' +
     '#trKutu .tr-oto{position:absolute;top:10px;right:10px;display:flex;align-items:center;gap:7px;border:0;background:rgba(0,0,0,.55);border-radius:16px;padding:6px 12px;font-size:12.5px;cursor:pointer;z-index:2}' +
     '#trKutu .tr-oto[hidden]{display:none}' +
     '#trKutu .tr-oto i{width:9px;height:9px;border-radius:50%;background:#9ca3af}' +
@@ -17503,11 +17839,34 @@ function trKapat(kesin) {
     '#trKutu .tr-kalt{flex:none;height:118px;display:flex;align-items:center;justify-content:space-around;padding:0 12px}' +
     '#trKutu .tr-yuvarlak{width:76px;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;color:#e5e7eb}' +
     '#trKutu .tr-yuvarlak svg{width:30px;height:30px}' +
-    '#trKutu .tr-kucukresim{width:40px;height:52px;border-radius:4px;background:#374151 center/cover no-repeat;border:2px solid #fff}' +
-    '#trKutu .tr-deklansor{width:76px;height:76px;border-radius:50%;border:4px solid #fff;background:transparent;padding:5px;cursor:pointer}' +
+    '#trKutu .tr-kucukresim{position:relative;width:44px;height:58px;border-radius:4px;background:#374151 center/cover no-repeat;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5)}' +
+    '#trKutu #trRozet{position:absolute;right:-11px;bottom:-11px;min-width:24px;height:24px;padding:0 5px;box-sizing:border-box;border-radius:12px;background:#2563eb;color:#fff;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid #0f1115}' +
+    '#trKutu #trRozet:empty{display:none}' +
+    '#trKutu .tr-deklansor{position:relative;width:76px;height:76px;border-radius:50%;border:4px solid #fff;background:transparent;padding:5px;cursor:pointer}' +
+    '#trKutu .tr-halka{position:absolute;left:-9px;top:-9px;width:calc(100% + 18px);height:calc(100% + 18px);transform:rotate(-90deg);pointer-events:none}' +
+    '#trKutu .tr-halka circle{fill:none;stroke-width:5.5}' +
+    '#trKutu .tr-halka-iz{stroke:transparent}' +
+    '#trKutu .tr-halka-yay{stroke:#3b82f6;stroke-linecap:round}' +
     '#trKutu .tr-deklansor i{display:block;width:100%;height:100%;border-radius:50%;background:#fff;transition:transform .1s}' +
     '#trKutu .tr-deklansor:active i{transform:scale(.88)}' +
-    '#trKutu #trSonuc{max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 4px 24px rgba(0,0,0,.6);background:#fff}' +
+    '#trKutu #trDuzenSahne{padding:18px;box-sizing:border-box;touch-action:none;background:#2a2d33}' +
+    '#trKutu #trSonuc{max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 4px 24px rgba(0,0,0,.5);background:#fff;-webkit-user-drag:none;user-select:none}' +
+    '#trKutu .tr-cerceve{position:absolute;border:2px solid #3b82f6;box-sizing:border-box;pointer-events:none}' +
+    '#trKutu .tr-cerceve[hidden]{display:none}' +
+    '#trKutu .tr-ck{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:rgba(160,174,192,.55);border:2.5px solid #3b82f6;box-sizing:border-box;pointer-events:auto;cursor:grab;touch-action:none}' +
+    '#trKutu .tr-ck::before,#trKutu .tr-cs::before{content:"";position:absolute;inset:-14px}' +
+    '#trKutu .tr-ck[data-k="0"]{left:0;top:0}#trKutu .tr-ck[data-k="1"]{left:100%;top:0}#trKutu .tr-ck[data-k="2"]{left:100%;top:100%}#trKutu .tr-ck[data-k="3"]{left:0;top:100%}' +
+    '#trKutu .tr-cs{position:absolute;background:rgba(160,174,192,.55);border:2px solid #3b82f6;box-sizing:border-box;border-radius:3px;pointer-events:auto;cursor:grab;touch-action:none}' +
+    '#trKutu .tr-cs-y{width:36px;height:11px;margin:-5.5px 0 0 -18px;left:50%}#trKutu .tr-cs-d{width:11px;height:36px;margin:-18px 0 0 -5.5px;top:50%}' +
+    '#trKutu .tr-cs[data-s="0"]{top:0}#trKutu .tr-cs[data-s="2"]{top:100%}#trKutu .tr-cs[data-s="1"]{left:100%}#trKutu .tr-cs[data-s="3"]{left:0}' +
+    '#trKutu .tr-sayfanav{flex:none;display:flex;align-items:center;justify-content:center;gap:14px;padding:8px 12px 2px}' +
+    '#trKutu .tr-navok{width:40px;height:40px;border-radius:50%;border:0;background:#1f2937;display:flex;align-items:center;justify-content:center;cursor:pointer}' +
+    '#trKutu .tr-navok:disabled{opacity:.3}' +
+    '#trKutu .tr-navok svg{width:22px;height:22px;stroke-width:2.2}' +
+    '#trKutu .tr-sayfapil{height:40px;border-radius:20px;border:0;background:#1f2937;padding:0 16px 0 18px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;cursor:pointer}' +
+    '#trKutu .tr-sayfapil svg{width:18px;height:18px;stroke-width:2.2;transition:transform .2s}' +
+    '#trKutu .tr-sayfapil.acik svg{transform:rotate(180deg)}' +
+    '#trKutu .tr-serit[hidden]{display:none}' +
     '#trKutu #trSonuc[hidden]{display:none}' +
     '#trKutu .tr-bekle{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}' +
     '#trKutu .tr-bekle[hidden]{display:none}' +
@@ -17534,9 +17893,14 @@ function trKapat(kesin) {
     '#trKutu .tr-birincil{border:0;background:var(--tema,#2563eb);color:#fff !important}' +
     '#trKutu .tr-birincil:disabled{opacity:.45}' +
     '#trKutu .tr-tehlike{border:0;background:#dc2626;color:#fff !important}' +
-    '#trKutu #trKaynak{max-width:calc(100% - 36px);max-height:calc(100% - 36px);object-fit:contain}' +
+    '#trKutu #trKaynak{position:absolute;max-width:none;max-height:none;-webkit-user-drag:none;user-select:none}' +
+    '#trKutu #trKirpSahne{background:#111}' +
+    '#trKutu .tr-kenar{position:absolute;width:34px;height:12px;border-radius:4px;background:rgba(255,255,255,.75);border:2.5px solid #3b82f6;box-sizing:border-box;pointer-events:none}' +
+    '#trKutu .tr-kenar.tut{background:#3b82f6}' +
+    '#trKutu #trBuyutec{position:absolute;width:120px;height:120px;border-radius:50%;border:3px solid #fff;box-shadow:0 6px 20px rgba(0,0,0,.6);pointer-events:none;z-index:3;background:#000}' +
+    '#trKutu #trBuyutec[hidden]{display:none}' +
     '#trKutu #trCizgi{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}' +
-    '#trKutu #trCokgen{fill:rgba(59,130,246,.14);stroke:#3b82f6;stroke-width:2}' +
+    '#trKutu #trCokgen{fill:rgba(59,130,246,.10);stroke:#3b82f6;stroke-width:2.5}' +
     '#trKutu #trKirpSahne{touch-action:none}' +
     '#trKutu .tr-tutamak{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:rgba(255,255,255,.25);border:3px solid #3b82f6;box-shadow:0 0 0 2px rgba(255,255,255,.9);pointer-events:none}' +
     '#trKutu .tr-tutamak.tut{width:40px;height:40px;margin:-20px 0 0 -20px;background:rgba(59,130,246,.25)}' +
