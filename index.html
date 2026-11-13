@@ -9390,7 +9390,7 @@ openDocFile = async function (file) {
     '<text x="17" y="25.3" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.6" font-weight="700" fill="#fff">PDF</text>' +
     '<path d="M32 29h6.5v7.5h4.5L35.25 45 27.5 36.5H32z" fill="#e3060f"/>' +
     '</svg></span>' +
-    '<span class="bl-yazi"><b>PDF_Düzenleme_Programı_V4.8</b></span>';
+    '<span class="bl-yazi"><b>PDF_Düzenleme_Programı_V5.2</b></span>';
   header.insertAdjacentHTML('beforeend',
     '<div class="bl-zoom"><button type="button" class="bl-zb" id="blKucult" title="Uzaklaştır">−</button>' +
     '<span class="bl-zv" id="blYuzde">%100</span>' +
@@ -15544,7 +15544,7 @@ xaCellAlign = function (cell, T, rows) {
    ===================================================================== */
 'use strict';
 
-const TL_TARIH = '12/11/2026'; // her yeni sürümde güncellenir
+const TL_TARIH = '13/11/2026'; // her yeni sürümde güncellenir
 
 (function tlKur() {
   const baslik = document.querySelector('header .bl-yazi b');
@@ -18956,6 +18956,882 @@ function trSecenekAc() {
     'body:not(.ag-dar):not(.mb-telefon) footer #telif{display:none}' +
     '@media print{#tlSol{display:none !important}}';
   document.head.appendChild(st);
+})();
+
+</script>
+<script>
+/* =====================================================================
+   YEDEK VE DRIVE'A BAĞLA YAMASI — 13.11.2026 (V4.9)
+   22-D İhale Programı v6.85'teki "Drive'a Bağla"nın aynısı.
+   Sol menüde Tüm araçlar → ARAÇLAR altında Görünüm'ün altına üç düğme:
+   - Yedek Al: programın bu bilgisayarda sakladığı ayarları (tema rengi,
+     görünüm yoğunluğu, otomatik çekim) tek dosyaya indirir.
+   - Yedek Yükle: o dosyayı geri yükler (Drive dosyası da açılır).
+   - Drive'a Bağla (bulut simgesi): bir kez Drive klasöründe bir dosya
+     seçilir (önerilen ad pdf_duzenleme_veri.json; Linux'ta GoogleDrive →
+     PROGRAM YEDEKLERİ, Windows'ta G:\Drive'ım\PROGRAM YEDEKLERİ). Program
+     her değişiklikte o dosyaya kendisi yazar (1,5 sn sonra, içerik
+     değişmediyse yazmaz); açılışta, pencereye dönünce ve yazmadan hemen
+     önce oradan okur. Dosyadaki yazım numarası bu bilgisayarın son
+     bildiğinden farklıysa dosya başka bilgisayarda değişmiştir: üstüne
+     yazılmaz, önce o yüklenir. Böylece eski açık sekme yeni kaydın üstüne
+     yazamaz. Bu programda veriler yalnız ayar olduğundan sayfa yenilenmez,
+     ayarlar hemen uygulanır (açık PDF kaybolmaz).
+     Düğmenin rengi durumu gösterir: gri bağlı değil, yeşil "Drive'a Bağlı"
+     (üzerine gelince dosya adı ve son eşitleme saati), turuncu "Drive: İzin
+     Ver", kırmızı "Drive: Hata". Chrome ve Edge dışında uyarı verir.
+   Yalnız "pdfDuzenleme." önekli anahtarlar eşitlenir (file:// sayfaları
+   aynı yeri paylaşır; başka programların kayıtlarına dokunulmaz). Menü
+   durumu ve masaüstü/mobil görünüm her bilgisayarda ayrı kalır. Dosya
+   tutamağı bu bilgisayarda tarayıcının içinde (IndexedDB:
+   pdfDuzenleme_drive) saklanır; programa gömülü kişisel bilgi yoktur.
+   Programın kendi koduna dokunulmadı.
+
+   EK — 13.11.2026 (V5.0):
+   - Aynı bilgisayarda iki sekme açıkken eski sekme yeni kaydın üstüne
+     yazamaz: her sekme kendi gördüğü son yazım numarasını ayrıca bellekte
+     tutar (sekme açılınca bu bilgisayarın bildiğiyle başlar; kendi her
+     yazımından sonra ve bağlanırken güncellenir, bağlantı kesilince
+     boşalır). "Dosya başka yerde değişmiş mi?" denetimi (açılışta,
+     pencereye dönünce, yazmadan önce) bu sekmenin bellekteki değeriyle
+     yapılır; farklıysa üstüne yazılmaz, dosyadaki yüklenir (sayfa
+     yenilenmez, açık PDF kalır), "Drive'da daha yeni kayıt vardı, o
+     yüklendi (tarih)" mesajı çıkar.
+   - Sayfayı temizle yalnız çalışma alanını boşaltır; ayarlar, Drive'daki
+     dosya ve Drive bağlantısı silinmez (SAYFAYI TEMİZLE ONAY VE GERİ AL
+     YAMASI).
+   ===================================================================== */
+'use strict';
+
+(function dvKur() {
+  const ON = 'pdfDuzenleme.', META = ON + 'drive.v1', DB = 'pdfDuzenleme_drive';
+  const HARIC = /^pdfDuzenleme\.(agacMenu|gorunum|drive)/;   // bu bilgisayara özgü
+  const TUR = 'pdf-duzenleme-yedek';
+  const LS = window.localStorage, ORJ_SET = Storage.prototype.setItem, ORJ_REM = Storage.prototype.removeItem;
+  const DESTEK = typeof window.showSaveFilePicker === 'function';
+  let tut = null, izin = false, yaziyor = false, kirli = false, zmn = null, sonKontrol = 0, yukleniyor = false, hataGosterildi = false;
+  // bu sekmenin gördüğü son yazım numarası ve içerik özeti (bellekte; aynı bilgisayardaki öbür sekmeden bağımsız)
+  let bilinen = null, bilinenOzet = null;
+
+  const surum = () => { const b = document.querySelector('header .bl-yazi b'); const m = ((b && b.textContent) || '').match(/V\d+(\.\d+)*$/i); return m ? m[0].toUpperCase() : ''; };
+  function metaOku() { try { return JSON.parse(LS.getItem(META) || '{}') || {}; } catch (e) { return {}; } }
+  function metaYaz(m) { try { ORJ_SET.call(LS, META, JSON.stringify(m)); } catch (e) { /* */ } }
+  function no() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10); }
+  { const m0 = metaOku(); bilinen = m0.yazimNo || null; bilinenOzet = m0.ozet || null; }   // sekme açılınca bu bilgisayarın bildiğiyle başlar
+  function cihaz() { const m = metaOku(); if (!m.cihaz) { m.cihaz = no(); metaYaz(m); } return m.cihaz; }
+  const iki = n => (n < 10 ? '0' : '') + n;
+  function tarihYaz(t) { try { const d = new Date(t); if (isNaN(d)) return ''; return iki(d.getDate()) + '.' + iki(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + iki(d.getHours()) + ':' + iki(d.getMinutes()); } catch (e) { return ''; } }
+
+  /* ---- mesaj: alttaki durum çubuğu + birkaç saniye görünen kutu ---- */
+  function mesaj(m, hata) {
+    try { status(m, hata ? 'err' : ''); } catch (e) { /* */ }
+    let k = document.getElementById('dvMesaj');
+    if (!k) {
+      k = document.createElement('div'); k.id = 'dvMesaj';
+      k.addEventListener('click', () => k.classList.remove('on'));
+      document.body.appendChild(k);
+    }
+    k.textContent = m; k.classList.toggle('hata', !!hata); k.classList.add('on');
+    clearTimeout(k.zmn); k.zmn = setTimeout(() => k.classList.remove('on'), hata ? 9000 : 6000);
+  }
+  const bil = m => mesaj(m, false), uya = m => mesaj(m, true);
+
+  /* ---- dosya tutamağı: bu bilgisayarda tarayıcının içinde (IndexedDB) ---- */
+  function idb() {
+    return new Promise((ok, red) => {
+      const r = indexedDB.open(DB, 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('h');
+      r.onsuccess = () => ok(r.result); r.onerror = () => red(r.error);
+    });
+  }
+  function idbIs(kip, fn) {
+    return idb().then(d => new Promise((ok, red) => {
+      const t = d.transaction('h', kip), r = fn(t.objectStore('h'));
+      t.oncomplete = () => ok(r && r.result); t.onerror = () => red(t.error);
+    }));
+  }
+  const tutKaydet = h => idbIs('readwrite', s => s.put(h, 'dosya')).catch(() => { });
+  const tutOku = () => idbIs('readonly', s => s.get('dosya')).catch(() => null);
+  const tutSil = () => idbIs('readwrite', s => s.delete('dosya')).catch(() => { });
+
+  /* ---- paket: Yedek Al dosyası; Drive dosyası aynı biçim + yazım numarası ---- */
+  function anahtarlar() {
+    const ks = [];
+    for (let i = 0; i < LS.length; i++) { const k = LS.key(i); if (k && k.indexOf(ON) === 0 && !HARIC.test(k)) ks.push(k); }
+    ks.sort(); const o = {}; ks.forEach(k => { o[k] = LS.getItem(k); }); return o;
+  }
+  function ozet(o) { const t = JSON.stringify(o || {}); let h = 5381; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return t.length + ':' + (h >>> 0).toString(36); }
+  const yedekPaket = () => ({ tur: TUR, surum: surum(), olusturma: new Date().toISOString(), anahtarlar: anahtarlar() });
+  function paketYap() { const p = yedekPaket(); p.drive = 1; p.yazimNo = no(); p.cihaz = cihaz(); return p; }
+  const programVerisi = p => !!(p && p.tur === TUR && p.anahtarlar && typeof p.anahtarlar === 'object');
+  function dosyaOku() {
+    return tut.getFile().then(f => (f.size ? f.text() : '')).then(t => {
+      if (!String(t).trim()) return null;
+      try { return JSON.parse(t); } catch (e) { return { bozuk: true }; }
+    });
+  }
+
+  /* ---- ayarları programa uygula (sayfa yenilenmez: açık PDF kaybolmasın) ---- */
+  function canliUygula() {
+    try { grTemaUygula(); } catch (e) { /* */ }
+    try { grYogunlukUygula(); } catch (e) { /* */ }
+    try { if (typeof OTO !== 'undefined') OTO.acik = LS.getItem(ON + 'tara.oto') !== '0'; } catch (e) { /* */ }
+  }
+  /* dosyadaki/yedekteki anahtarları bu bilgisayara yaz; olmayanları sil (bu bilgisayara özgüler hariç) */
+  function anahtarlariYaz(A, yaz, sil) {
+    const fazla = [];
+    for (let i = 0; i < LS.length; i++) { const k = LS.key(i); if (k && k.indexOf(ON) === 0 && !HARIC.test(k) && !(k in A)) fazla.push(k); }
+    fazla.forEach(k => { try { sil(k); } catch (e) { /* */ } });
+    Object.keys(A).forEach(k => { if (k.indexOf(ON) === 0 && !HARIC.test(k) && typeof A[k] === 'string') { try { yaz(k, A[k]); } catch (e) { /* */ } } });
+  }
+
+  /* ---- dosyadaki kaydı programa al ---- */
+  function disYukle(p, neden) {
+    yukleniyor = true; kirli = false; clearTimeout(zmn);
+    try {
+      anahtarlariYaz(p.anahtarlar, (k, v) => ORJ_SET.call(LS, k, v), k => ORJ_REM.call(LS, k));
+      const m = metaOku(); m.yazimNo = p.yazimNo || null; m.ozet = ozet(anahtarlar()); m.zaman = Date.now(); m.hata = null; metaYaz(m);
+      bilinen = m.yazimNo; bilinenOzet = m.ozet;
+      canliUygula();
+    } finally { yukleniyor = false; }
+    bil((neden === 'baglan' ? 'Drive\'daki kayıt yüklendi' : 'Drive\'da daha yeni kayıt vardı, o yüklendi') +
+      (p.olusturma ? ' (' + tarihYaz(p.olusturma) + ')' : '') + '.');
+    durum();
+  }
+
+  /* ---- yaz ---- */
+  function planla() { clearTimeout(zmn); zmn = setTimeout(kaydet, 1500); }
+  function kaydet() {
+    if (!tut || !izin || yukleniyor) return Promise.resolve();
+    if (yaziyor) { kirli = true; return Promise.resolve(); }
+    yaziyor = true; kirli = false; durum();
+    return dosyaOku().then(p => {
+      // başka yerde (öbür bilgisayarda ya da bu bilgisayardaki öbür sekmede) değişmiş: üstüne yazma
+      if (p && !p.bozuk && p.yazimNo && p.yazimNo !== bilinen && programVerisi(p)) { disYukle(p, 'yazarken'); return; }
+      const yeni = paketYap(), oz = ozet(yeni.anahtarlar);
+      if (p && !p.bozuk && p.yazimNo && p.yazimNo === bilinen && bilinenOzet === oz) return;   // dosyadaki zaten bu
+      const s = JSON.stringify(yeni, null, 1);
+      return tut.createWritable().then(w => w.write(s).then(() => w.close())).then(() => {
+        const m2 = metaOku(); m2.yazimNo = yeni.yazimNo; m2.ozet = oz; m2.zaman = Date.now(); m2.hata = null; metaYaz(m2); hataGosterildi = false;
+        bilinen = yeni.yazimNo; bilinenOzet = oz;
+      });
+    }).catch(e => {
+      const m = metaOku(); m.hata = String((e && e.message) || e); metaYaz(m);
+      if (!hataGosterildi) { hataGosterildi = true; uya('Drive dosyasına yazılamadı: ' + m.hata + ' — Drive bağlantısını kontrol edin; ayarlar bu bilgisayarda duruyor.'); }
+    }).then(() => { yaziyor = false; durum(); if (kirli && !yukleniyor) planla(); });
+  }
+
+  /* ---- açılışta ve pencereye dönünce: dosya yeniyse onu al ---- */
+  function kontrol(zorla) {
+    if (!tut || !izin || yaziyor || yukleniyor) return Promise.resolve();
+    const simdi = Date.now(); if (!zorla && simdi - sonKontrol < 3000) return Promise.resolve(); sonKontrol = simdi;
+    return dosyaOku().then(p => {
+      if (p && !p.bozuk && p.yazimNo && p.yazimNo !== bilinen && programVerisi(p)) { disYukle(p, 'kontrol'); return; }
+      if (!p || !p.yazimNo || kirli) planla();      // dosya boşsa ya da bekleyen değişiklik varsa yaz
+    }).catch(() => durum());
+  }
+
+  /* ---- değişiklikleri yakala: programın kayıtları localStorage'a her yazıldığında ---- */
+  const bizim = (t, k) => t === LS && typeof k === 'string' && k.indexOf(ON) === 0 && !HARIC.test(k);
+  function dokundu(t, k) { if (bizim(t, k) && !yukleniyor) { kirli = true; if (tut && izin) planla(); } }
+  // dosyadaki kayıt yüklenirken programın eski verisi araya yazamasın
+  Storage.prototype.setItem = function (k, v) { if (yukleniyor && bizim(this, k)) return; const r = ORJ_SET.apply(this, arguments); dokundu(this, k); return r; };
+  Storage.prototype.removeItem = function (k) { if (yukleniyor && bizim(this, k)) return; const r = ORJ_REM.apply(this, arguments); dokundu(this, k); return r; };
+
+  /* ---- Drive düğmesi ---- */
+  const RENK = { gri: '#9e9e9e', yesil: '#0f9d58', turuncu: '#ef6c00', kirmizi: '#c62828' };
+  function durum() {
+    const m = metaOku(), ad = tut ? tut.name : '';
+    let yazi, renk, ipucu;
+    if (!DESTEK) { yazi = 'Drive\'a Bağla'; renk = RENK.gri; ipucu = 'Drive\'a otomatik kayıt bilgisayarda Chrome ya da Edge\'de çalışır.'; }
+    else if (!tut) { yazi = 'Drive\'a Bağla'; renk = RENK.gri; ipucu = 'Drive klasöründe bir dosya seçin; program her değişiklikte oraya kendisi kaydeder.'; }
+    else if (!izin) { yazi = 'Drive: İzin Ver'; renk = RENK.turuncu; ipucu = 'Chrome dosyaya yazma izni istiyor. Tıklayın, İzin ver deyin.'; }
+    else if (m.hata) { yazi = 'Drive: Hata'; renk = RENK.kirmizi; ipucu = 'Son yazma başarısız: ' + m.hata; }
+    else { yazi = 'Drive\'a Bağlı'; renk = RENK.yesil; ipucu = 'Dosya: ' + ad + (m.zaman ? '  ·  Son eşitleme: ' + tarihYaz(m.zaman) : '') + (yaziyor ? '  ·  kaydediliyor…' : ''); }
+    const b = document.getElementById('dvDrive'); if (!b) return;
+    b.title = ipucu; b.dataset.durum = renk === RENK.yesil ? 'bagli' : renk === RENK.turuncu ? 'izin' : renk === RENK.kirmizi ? 'hata' : 'yok';
+    const a = b.querySelector('.mn-ad'); if (a) a.textContent = yazi;
+    const ik = b.querySelector('.mn-ik'); if (ik) ik.style.color = renk;
+  }
+  function baglan() {
+    let h;
+    return window.showSaveFilePicker({
+      suggestedName: 'pdf_duzenleme_veri.json',
+      types: [{ description: 'PDF Düzenleme Programı verisi', accept: { 'application/json': ['.json'] } }]
+    })
+      .then(x => { h = x; return h.getFile(); })
+      .then(f => (f.size ? f.text() : ''))
+      .then(t => {
+        let p = null; if (String(t).trim()) { try { p = JSON.parse(t); } catch (e) { p = { bozuk: true }; } }
+        if (p && !programVerisi(p)) { uya('Seçilen dosya bu programın verisi değil; üzerine yazılmadı. Boş bir dosya adı ya da programın kayıt dosyasını seçin.'); return; }
+        tut = h; izin = true; if (!p) { bilinen = null; bilinenOzet = null; }
+        return tutKaydet(h).then(() => {
+          let m = metaOku(); m.ad = h.name; m.hata = null; metaYaz(m);
+          if (p) {
+            const ok = confirm('SEÇİLEN DOSYADA KAYIT VAR\n\n' +
+              (p.olusturma ? 'Kayıt tarihi : ' + tarihYaz(p.olusturma) + '\n' : '') +
+              'Kayıtlı ayar : ' + Object.keys(p.anahtarlar).length + '\n\n' +
+              'Tamam  → dosyadaki kayıt programa yüklenir (ekrandaki ayarlar onunla değişir).\n' +
+              'İptal  → ekrandaki ayarlar dosyaya yazılır (dosyadaki eski kayıt silinir).');
+            if (ok) { disYukle(p, 'baglan'); return; }
+            m = metaOku(); m.yazimNo = p.yazimNo || null; metaYaz(m); bilinen = m.yazimNo; bilinenOzet = null;   // üzerine bilerek yazılıyor
+          }
+          bil('Drive\'a bağlandı: ' + h.name + '. Bundan sonra her değişiklik bu dosyaya kendiliğinden kaydedilir.');
+          durum(); return kaydet();
+        });
+      })
+      .catch(e => {
+        if (e && e.name === 'AbortError') {
+          if (tut && confirm('Dosya seçilmedi.\n\nDrive bağlantısı kesilsin mi? (Dosya silinmez; program bundan sonra yalnız bu bilgisayara kaydeder.)')) {
+            tut = null; izin = false; tutSil(); const m = metaOku(); delete m.yazimNo; delete m.ad; delete m.hata; delete m.ozet; metaYaz(m); bilinen = null; bilinenOzet = null; bil('Drive bağlantısı kesildi.');
+          }
+        } else uya('Drive dosyası seçilemedi: ' + ((e && e.message) || e));
+        durum();
+      });
+  }
+  function izinIste() {
+    if (!tut || izin) return Promise.resolve(izin);
+    return tut.requestPermission({ mode: 'readwrite' }).then(s => { izin = (s === 'granted'); durum(); if (izin) kontrol(true); return izin; })
+      .catch(() => { durum(); return false; });
+  }
+  function tikla() {
+    if (!DESTEK) { uya('Bu özellik Chrome ve Edge\'de çalışır (bilgisayarda).'); return; }
+    if (!tut) return baglan();
+    if (!izin) return izinIste();
+    const m = metaOku();
+    if (confirm('DRIVE KAYDI AÇIK\n\nDosya : ' + tut.name + (m.zaman ? '\nSon eşitleme : ' + tarihYaz(m.zaman) : '') +
+      '\n\nBaşka bir dosya seçmek ya da bağlantıyı kesmek için Tamam\'a basın.')) return baglan();
+  }
+
+  /* ---- Yedek Al / Yedek Yükle ---- */
+  function yedekAl() {
+    const p = yedekPaket(), d = new Date();
+    const ad = 'PDF_Duzenleme_Yedek_' + d.getFullYear() + '-' + iki(d.getMonth() + 1) + '-' + iki(d.getDate()) + '.json';
+    const url = URL.createObjectURL(new Blob([JSON.stringify(p, null, 1)], { type: 'application/json' }));
+    const a = document.createElement('a'); a.href = url; a.download = ad; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    bil('Yedek alındı: ' + ad + ' (' + Object.keys(p.anahtarlar).length + ' ayar).');
+  }
+  function yedekYukle() {
+    const g = document.createElement('input'); g.type = 'file'; g.accept = '.json,application/json';
+    g.addEventListener('change', () => {
+      const f = g.files && g.files[0]; if (!f) return;
+      f.text().then(t => {
+        let p = null; try { p = JSON.parse(t); } catch (e) { p = null; }
+        if (!programVerisi(p)) { uya('Bu dosya PDF Düzenleme Programı yedeği değil; yüklenmedi.'); return; }
+        if (!confirm('YEDEK YÜKLENSİN Mİ?\n\nDosya : ' + f.name + (p.olusturma ? '\nYedek tarihi : ' + tarihYaz(p.olusturma) : '') +
+          '\nKayıtlı ayar : ' + Object.keys(p.anahtarlar).length + '\n\nBu bilgisayardaki ayarlar yedektekilerle değişir.')) return;
+        anahtarlariYaz(p.anahtarlar, (k, v) => LS.setItem(k, v), k => LS.removeItem(k));   // Drive'a bağlıysa oraya da gider
+        canliUygula();
+        bil('Yedek yüklendi' + (p.olusturma ? ' (' + tarihYaz(p.olusturma) + ')' : '') + '.');
+      }).catch(e => uya('Yedek okunamadı: ' + ((e && e.message) || e)));
+    });
+    g.click();
+  }
+
+  /* ---- menü: Tüm araçlar → ARAÇLAR → Görünüm'ün altı ---- */
+  function menuKur() {
+    if (document.getElementById('dvDrive') || typeof mnOge !== 'function' || typeof MN === 'undefined' || !MN.paneller || !MN.paneller.tum) return;
+    MN_IKON.yedekal = '<path d="M12 3.5v11M7.5 10L12 14.5 16.5 10"/><path d="M4.5 15.5v3.5h15v-3.5"/>';
+    MN_IKON.yedekyukle = '<path d="M12 14.5v-11M7.5 8L12 3.5 16.5 8"/><path d="M4.5 15.5v3.5h15v-3.5"/>';
+    MN_IKON.drive = '<path d="M7 19h10.6a4.4 4.4 0 0 0 .7-8.75A6.2 6.2 0 0 0 6.4 9.2 4.9 4.9 0 0 0 7 19z"/>';
+    const y1 = mnOge('yedekal', 'Yedek Al', '#1565c0', yedekAl), y2 = mnOge('yedekyukle', 'Yedek Yükle', '#424242', yedekYukle);
+    const dv = mnOge('drive', 'Drive\'a Bağla', RENK.gri, tikla);
+    y1.id = 'dvYedekAl'; y2.id = 'dvYedekYukle'; dv.id = 'dvDrive';
+    y1.title = 'Ayarları (tema rengi, görünüm yoğunluğu, otomatik çekim) tek dosyaya indirir.';
+    y2.title = 'Yedek Al ya da Drive dosyasındaki ayarları geri yükler.';
+    const gor = [...MN.paneller.tum.querySelectorAll('.mn-oge[data-tab="gorunum"]')][0];
+    if (gor && gor.parentNode === MN.paneller.tum) gor.after(y1, y2, dv);
+    else MN.paneller.tum.append(y1, y2, dv);
+    const st = document.createElement('style');
+    st.textContent =
+      '#dvMesaj{position:fixed;left:50%;top:64px;transform:translate(-50%,-16px);max-width:min(560px,92vw);padding:11px 16px;border-radius:10px;' +
+      'background:#1f2937;color:#fff;font-size:14px;line-height:1.4;box-shadow:0 6px 24px rgba(0,0,0,.25);z-index:2147483000;opacity:0;pointer-events:none;' +
+      'transition:opacity .2s,transform .2s;cursor:pointer}' +
+      '#dvMesaj.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}' +
+      '#dvMesaj.hata{background:#b42318}' +
+      '@media print{#dvMesaj{display:none !important}}';
+    document.head.appendChild(st);
+    durum();
+  }
+
+  /* ---- açılış ---- */
+  function basla() {
+    menuKur(); durum();
+    if (!DESTEK) return;
+    tutOku().then(h => {
+      if (!h) return; tut = h;
+      return h.queryPermission({ mode: 'readwrite' }).then(s => {
+        izin = (s === 'granted'); durum();
+        if (izin) { kontrol(true); return; }
+        // izin için tarayıcı kullanıcının bir tıklamasını ister: ilk tıklamada / tuşta sorulur
+        bil('Drive kaydı için Chrome izin isteyecek: sayfada herhangi bir yere tıklayınca çıkan pencerede "İzin ver" deyin.');
+        const ilk = ev => {
+          if (ev && ev.target && ev.target.closest && ev.target.closest('#dvDrive')) return;
+          document.removeEventListener('pointerdown', ilk, true); document.removeEventListener('keydown', ilk, true); izinIste();
+        };
+        document.addEventListener('pointerdown', ilk, true); document.addEventListener('keydown', ilk, true);
+      });
+    }).catch(() => durum());
+    window.addEventListener('focus', () => kontrol(false));
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') kontrol(false); else if (kirli) kaydet(); });
+    setInterval(() => { if (kirli && !yaziyor) kaydet(); }, 60000);
+  }
+  window.pdfDrive = {
+    durum, kaydet, kontrol, baglan, yedekAl, yedekYukle, bilinen: () => bilinen,
+    _ayarla: (h, i) => { tut = h; izin = !!i; durum(); }   // yalnız deneme içindir
+  };
+  menuKur();
+  if (document.readyState === 'complete') setTimeout(basla, 300); else window.addEventListener('load', () => setTimeout(basla, 300));
+})();
+
+</script>
+<script>
+/* =====================================================================
+   SAYFAYI TEMİZLE ONAY VE GERİ AL YAMASI — 13.11.2026 (V5.0)
+   Belgenin üstündeki "Sayfayı temizle" yalnız çalışma alanını boşaltır:
+   ekrandaki PDF (ve üzerindeki kaydedilmemiş düzenlemeler) ya da
+   birleştirme listesi ekrandan çıkarılır. Bilgisayardaki PDF dosyaları,
+   kaydedilen PDF'ler, ayarlar (tema rengi, görünüm yoğunluğu, otomatik
+   çekim), Drive'daki dosya ve Drive bağlantısı hiç değişmez.
+   - Basınca onay penceresi neyin silineceğini ve neyin SİLİNMEYECEĞİNİ
+     yazar.
+   - Temizledikten sonra altta "Geri Al" çıkar: çıkarılan PDF bütün
+     düzenlemeleri, geri al geçmişi, üst/alt bilgi ve filigran ayarlarıyla
+     (birleştirmede liste sırasıyla) olduğu gibi geri gelir. Başka bir PDF
+     açılınca ya da çubuk kapatılınca geri alma bırakılır.
+   EK — 13.11.2026 (V5.1): onay penceresinin SİLİNMEYECEK listesine
+   "Geçmiş Dosyalar'daki kayıtlar" eklendi (temizlik oraya hiç dokunmaz).
+   Programın kendi koduna dokunulmadı; düğmenin tıklaması önden yakalanır,
+   programın kendi temizleme işlevi kullanılır (yalnız PDF okuyucuları
+   Geri Al için kapatılmadan saklanır).
+   ===================================================================== */
+'use strict';
+
+(function stKur() {
+  let SAK = null, geriAliyor = false;
+  const V16var = typeof V16 !== 'undefined', KYvar = typeof KY !== 'undefined';   // başka bloklardaki değişkenler
+
+  // PDF okuyucuları (pdf.js) temizlikte kapatılmasın: Geri Al için saklanır
+  function koru(belgeler) { const L = belgeler.filter(d => d && typeof d.destroy === 'function'); L.forEach(d => { d.destroy = () => Promise.resolve(); }); return () => L.forEach(d => { delete d.destroy; }); }
+  function birak() {
+    if (!SAK) return;
+    const s = SAK; SAK = null; cubuk(false);
+    const L = s.tur === 'belge' ? [s.js, ...s.pages.map(p => p.jsDoc), ...(s.ky || [])] : s.files.map(f => f.js);
+    for (const d of L) if (d) { try { d.destroy(); } catch (e) { /* */ } }
+  }
+
+  /* ---- Geri Al çubuğu ---- */
+  function cubuk(ac, yazi) {
+    let c = document.getElementById('stGeri');
+    if (!c) {
+      c = document.createElement('div'); c.id = 'stGeri';
+      c.innerHTML = '<span class="st-yazi"></span><button type="button" class="st-geri">Geri Al</button><button type="button" class="st-kapat" aria-label="Kapat" title="Kapat (geri alma bırakılır)">×</button>';
+      c.querySelector('.st-geri').addEventListener('click', geriAl);
+      c.querySelector('.st-kapat').addEventListener('click', birak);
+      document.body.appendChild(c);
+      const st = document.createElement('style');
+      st.textContent =
+        '#stGeri{position:fixed;left:50%;bottom:44px;transform:translateX(-50%);display:none;align-items:center;gap:12px;max-width:min(640px,94vw);' +
+        'padding:9px 10px 9px 16px;border-radius:10px;background:#1f2937;color:#fff;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.25);z-index:2147482990}' +
+        '#stGeri.on{display:flex}' +
+        '#stGeri .st-yazi{flex:1;min-width:0;line-height:1.35}' +
+        '#stGeri .st-geri{flex:none;height:32px;padding:0 16px;border-radius:16px;border:0;background:#fbbf24;color:#1f2937;font:inherit;font-size:14px;font-weight:700;cursor:pointer}' +
+        '#stGeri .st-geri:hover{background:#f59e0b}' +
+        '#stGeri .st-kapat{flex:none;width:30px;height:30px;border-radius:50%;border:0;background:transparent;color:#d1d5db;font-size:20px;line-height:1;cursor:pointer}' +
+        '#stGeri .st-kapat:hover{background:rgba(255,255,255,.12)}' +
+        '@media print{#stGeri{display:none !important}}';
+      document.head.appendChild(st);
+    }
+    if (yazi) c.querySelector('.st-yazi').textContent = yazi;
+    c.classList.toggle('on', !!ac);
+  }
+
+  /* ---- temizle ---- */
+  function temizle() {
+    const birlestir = V.tab === 'birlestir' && M.items.length;
+    if (!birlestir && !S.lib) return;
+    const ne = birlestir
+      ? 'Birleştirme listesi (' + M.files.length + ' dosya, ' + M.items.length + ' sayfa)'
+      : 'Ekrandaki PDF: ' + S.name + '.pdf (' + S.pages.length + ' sayfa)' + (S.dirty ? ' ve üzerindeki kaydedilmemiş düzenlemeler' : '');
+    if (!confirm('SAYFAYI TEMİZLE\n\n' +
+      'SİLİNECEK (yalnız ekrandan):\n• ' + ne + '\n\n' +
+      'SİLİNMEYECEK:\n• Bilgisayarınızdaki PDF dosyaları ve kaydettiğiniz PDF\'ler\n' +
+      '• Geçmiş Dosyalar\'daki kayıtlar\n' +
+      '• Ayarlar (tema rengi, görünüm yoğunluğu, otomatik çekim)\n' +
+      '• Drive\'daki dosya ve Drive bağlantısı\n\n' +
+      'Temizledikten sonra alttaki "Geri Al" ile geri getirebilirsiniz.')) return;
+    birak();
+    if (birlestir) {
+      const s = { tur: 'birlestir', files: M.files.slice(), items: M.items.map(it => Object.assign({}, it, { el: null, done: false })) };
+      const geri = koru(s.files.map(f => f.js));
+      try { ybKapat(); } finally { geri(); }
+      SAK = s;
+      cubuk(true, 'Birleştirme listesi ekrandan çıkarıldı (' + s.items.length + ' sayfa).');
+      return;
+    }
+    const s = {
+      tur: 'belge', tab: V.tab, name: S.name, lib: S.lib, js: S.js, pages: S.pages, overlays: S.overlays, libFonts: S.libFonts, reuse: S.reuse, dirty: S.dirty,
+      undo: H.undo, redo: H.redo,
+      v16: V16var ? { img: [...V16.img], link: [...V16.link], hf: V16.hf, hfSaved: V16.hfSaved, wm: V16.wm, wmSaved: V16.wmSaved } : null,
+      ky: KYvar && Array.isArray(KY.jsDocs) ? KY.jsDocs.slice() : []
+    };
+    const geri = koru([s.js, ...s.pages.map(p => p.jsDoc), ...s.ky]);
+    S.dirty = false;   // programın kendi "kaydedilmemiş değişiklik" sorusu yerine yukarıdaki onay geçerli
+    try { v16CloseAll(); } finally { geri(); }
+    if (S.lib) { S.dirty = s.dirty; return; }   // kapanmadıysa
+    SAK = s;
+    cubuk(true, s.name + '.pdf ekrandan çıkarıldı. Dosyanız, ayarlar ve Drive yerinde.');
+  }
+
+  /* ---- geri al ---- */
+  function geriAl() {
+    const s = SAK; if (!s) return;
+    if (s.tur === 'belge' ? S.lib : M.items.length) { birak(); return; }
+    SAK = null; cubuk(false); geriAliyor = true;
+    try {
+      if (s.tur === 'birlestir') {
+        M.files.push(...s.files);
+        M.items.push(...s.items.map(it => Object.assign({}, it, { el: null, done: false })));
+        if (V.tab !== 'birlestir') showTab('birlestir');
+        buildMergeGrid(); updateEmpty();
+        status('Birleştirme listesi geri getirildi (' + M.items.length + ' sayfa).', 'ok');
+        return;
+      }
+      S.name = s.name; S.lib = s.lib; S.js = s.js; S.pages = s.pages; S.overlays = s.overlays; S.libFonts = s.libFonts; S.reuse = s.reuse; S.dirty = s.dirty;
+      for (const ov of S.overlays.values()) for (const b of ov) b.el = null;
+      for (const pg of S.pages) { pg.ocrQueued = false; pg.thumbVer = -1; }
+      H.undo = s.undo; H.redo = s.redo; try { PEND = null; } catch (e) { /* */ } updHist();
+      if (s.v16) {
+        V16.img.clear(); for (const [k, v] of s.v16.img) V16.img.set(k, v);
+        V16.link.clear(); for (const [k, v] of s.v16.link) V16.link.set(k, v);
+        V16.hf = s.v16.hf; V16.hfSaved = s.v16.hfSaved; V16.wm = s.v16.wm; V16.wmSaved = s.v16.wmSaved;
+        try { v16HfToUi(); v16WmToUi(); } catch (e) { /* */ }
+      }
+      if (KYvar) KY.jsDocs = s.ky;
+      V.built = false;
+      if (V.tab !== s.tab) showTab(s.tab);
+      else { if (isEditTab()) buildEditor(); if (V.tab === 'sil') buildThumbs(); }
+      updateEmpty();
+      try { v16HeaderButtons(); } catch (e) { /* */ }
+      try { if (V.tab === 'aktar') v16BuildExportThumbs(); } catch (e) { /* */ }
+      status(S.name + '.pdf geri getirildi' + (S.dirty ? ' (kaydedilmemiş düzenlemeleriyle)' : '') + '.', 'ok');
+    } finally { geriAliyor = false; }
+  }
+
+  // "Sayfayı temizle" tıklaması önden yakalanır
+  document.addEventListener('click', e => {
+    const b = e.target && e.target.closest && e.target.closest('#hTemizle'); if (!b) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    temizle();
+  }, true);
+  // başka bir PDF ya da liste açılınca geri alma bırakılır
+  const st_updateEmpty = updateEmpty;
+  updateEmpty = function () {
+    const r = st_updateEmpty.apply(this, arguments);
+    if (SAK && !geriAliyor && (S.lib || M.items.length)) birak();
+    return r;
+  };
+  window.pdfTemizle = { temizle, geriAl, durum: () => (SAK ? SAK.tur : null) };
+})();
+
+</script>
+<script>
+/* =====================================================================
+   GEÇMİŞ DOSYALAR YAMASI — 13.11.2026 (V5.1)
+   22-D İhale Programı'ndaki "Hesaplama Kaydet / Geçmiş Hesaplamalar"ın
+   bu programdaki karşılığı.
+   - KAYDET (belgenin üstündeki yeşil KAYDET, araç çubuğundaki Kaydet,
+     Birleştirme'deki Kaydet, Belge tara'nın Kaydet'i): PDF eskisi gibi
+     indirilir, ayrıca Geçmiş Dosyalar'a eklenir.
+   - Geçmiş Dosyalar (sol menüde ARAÇLAR altında ve belgenin üstündeki
+     GEÇMİŞ DOSYALAR düğmesi): kaydedilen dosyaların listesi.
+     Yükle: dosya düzenlemeleriyle geri gelir; eklenen metin kutuları,
+     görüntüler, bağlantılar, üst/alt bilgi ve filigran yeniden
+     düzenlenebilir. Birleştirme kaydı dosyaları ve sayfa sırasıyla
+     Birleştirme listesine geri gelir. Taranan belge düzenleme ekranında
+     açılır. Sil onay sorar.
+   - Kayıtlar bu bilgisayardaki tarayıcıda (IndexedDB) durur; siz
+     silmedikçe kalır. Sayfayı temizle, Yedek Yükle ve Drive bu kayıtlara
+     dokunmaz.
+   - Aynı dosya hiç değişmeden yeniden kaydedilirse yeni satır açılmaz;
+     tarihi güncellenip en üste alınır.
+   Programın kendi koduna dokunulmadı; PDF indirme işlevi (downloadBytes)
+   sarıldı, menüye ve belge üstü satırına düğme eklendi.
+   EK — 13.11.2026 (V5.2): Kilo'nun isteğiyle kaydetme ile indirme ayrıldı.
+   - Sol menüde ARAÇLAR altında Geçmiş Dosyalar'ın hemen üstünde yeşil
+     yazılı "Kaydet": hiçbir şey indirmez; açık PDF'i düzenlemeleriyle (ya
+     da Birleştirme listesini) Geçmiş Dosyalar'a kaydeder, "Kaydedildi"
+     der. Kaydedilen PDF için "kaydedilmemiş değişiklik" sorusu çıkmaz.
+   - Belgenin üstündeki yeşil KAYDET yalnız indirir (V5.0'daki gibi);
+     indirmeler, Birleştirme ve Belge tara'nın kaydetmesi artık Geçmiş
+     Dosyalar'a kendiliğinden eklenmez (downloadBytes sarılmıyor).
+   - Sol menüde sıra: Görünüm, Kaydet, Geçmiş Dosyalar, Drive'a Bağla,
+     Yedek Al, Yedek Yükle. Drive'a Bağla mavi yazılı; simgesinin rengi
+     yine bağlantı durumunu gösterir.
+   - Üstteki araç çubuğundan "PDF Aç" (Birleştirme'de "PDF Seç") ve
+     "Kaydet" kaldırıldı; dosya açmayı ortadaki "PDF Aç / Yükle" kutusu,
+     indirmeyi belge üstündeki KAYDET yapar.
+   ===================================================================== */
+'use strict';
+
+(function gdKur() {
+  const DB = 'pdfDuzenleme_gecmis';
+  const V16var = typeof V16 !== 'undefined';
+  let db = null, kutu = null;
+
+  /* ---------------- depo (IndexedDB) ---------------- */
+  function ac() {
+    if (db) return Promise.resolve(db);
+    return new Promise((res, rej) => {
+      const r = indexedDB.open(DB, 1);
+      r.onupgradeneeded = () => {
+        const d = r.result;
+        if (!d.objectStoreNames.contains('liste')) d.createObjectStore('liste', { keyPath: 'id', autoIncrement: true });
+        if (!d.objectStoreNames.contains('veri')) d.createObjectStore('veri');
+      };
+      r.onsuccess = () => { db = r.result; db.onversionchange = () => { db.close(); db = null; }; res(db); };
+      r.onerror = () => rej(r.error);
+      r.onblocked = () => rej(new Error('Geçmiş Dosyalar deposu açılamadı (başka sekme engelliyor).'));
+    });
+  }
+  function islem(depolar, kip, is) {
+    return ac().then(d => new Promise((res, rej) => {
+      const t = d.transaction(depolar, kip);
+      let sonuc;
+      t.oncomplete = () => res(sonuc);
+      t.onerror = () => rej(t.error);
+      t.onabort = () => rej(t.error || new Error('İşlem yarıda kaldı.'));
+      is(t, v => { sonuc = v; });
+    }));
+  }
+  const liste = () => islem(['liste'], 'readonly', (t, son) => {
+    const r = t.objectStore('liste').getAll();
+    r.onsuccess = () => son((r.result || []).sort((a, b) => b.t - a.t));
+  });
+  const veriOku = id => islem(['veri'], 'readonly', (t, son) => {
+    const r = t.objectStore('veri').get(id); r.onsuccess = () => son(r.result);
+  });
+  const ekle = (meta, veri) => islem(['liste', 'veri'], 'readwrite', (t, son) => {
+    const r = t.objectStore('liste').add(meta);
+    r.onsuccess = () => { son(r.result); t.objectStore('veri').put(veri, r.result); };
+  });
+  const guncelle = meta => islem(['liste'], 'readwrite', t => { t.objectStore('liste').put(meta); });
+  const sil = id => islem(['liste', 'veri'], 'readwrite', t => { t.objectStore('liste').delete(id); t.objectStore('veri').delete(id); });
+
+  /* içerik özeti: aynı dosya iki kez eklenmesin */
+  async function ozet(b) {
+    try {
+      if (crypto && crypto.subtle) {
+        const h = new Uint8Array(await crypto.subtle.digest('SHA-256', b));
+        return Array.from(h, x => x.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (e) { /* aşağıdaki yedek yol */ }
+    let h1 = 0x811c9dc5, h2 = 0x01000193;
+    for (let i = 0; i < b.length; i++) { h1 = Math.imul(h1 ^ b[i], 16777619); h2 = Math.imul(h2 + b[i], 2654435761); }
+    return (h1 >>> 0).toString(16) + (h2 >>> 0).toString(16) + ':' + b.length;
+  }
+
+  /* DOM öğesi ve işlev dışındaki alanların düz kopyası */
+  function duz(o) {
+    const c = {};
+    for (const k of Object.keys(o)) {
+      const v = o[k];
+      if (k === 'el' || typeof v === 'function' || (v && typeof v === 'object' && (v.nodeType || v instanceof Window))) continue;
+      if (v && typeof v === 'object') { try { c[k] = structuredClone(v); } catch (e) { /* kopyalanamayan alan atlanır */ } }
+      else c[k] = v;
+    }
+    return c;
+  }
+
+  /* ---------------- kaydedilecek durum ---------------- */
+  function belgeDurumu() {
+    const sira = new Map(S.pages.map((p, i) => [p.key, i]));
+    const d = {
+      name: S.name, tab: V.tab,
+      ov: S.pages.map(p => (S.overlays.get(p.key) || []).filter(b => b && String(b.text || '').trim()).map(duz)),
+      img: [], link: [], hf: null, wm: null
+    };
+    if (V16var) {
+      d.img = S.pages.map(p => (V16.img.get(p.key) || []).map(o => {
+        const c = duz(Object.assign({}, o, { src: null }));
+        c.src = o.src ? { bytes: o.src.bytes, type: o.src.type, iw: o.src.iw, ih: o.src.ih } : null;
+        return c;
+      }));
+      d.link = S.pages.map(p => (V16.link.get(p.key) || []).map(o => {
+        const c = duz(o); c.tidx = o.type === 'page' && sira.has(o.tkey) ? sira.get(o.tkey) : -1; delete c.tkey; return c;
+      }));
+      d.hf = structuredClone(V16.hf); d.wm = structuredClone(V16.wm);
+    }
+    return d;
+  }
+  async function belgeHazirla() {
+    const d = belgeDurumu(), sayfa = S.pages.length, lib = S.lib;   // durum, indirme anındaki haliyle alınır
+    await lib.flush();
+    if (S.lib === lib) S.libFonts = new Map();   // programın kendi kaydetmesindeki gibi (yazı tipleri yeniden gömülür)
+    d.raw = await lib.save({ updateFieldAppearances: false });
+    return { tur: 'belge', ad: d.name + '.pdf', sayfa, alt: '', veri: d };
+  }
+  async function birlesikHazirla() {
+    const items = M.items.map(it => [it.f, it.p]);
+    const kull = [...new Set(items.map(x => x[0]))];   // listede ilk göründükleri sırayla
+    const yeni = new Map(kull.map((f, i) => [f, i]));
+    const kaynak = kull.map(f => M.files[f]);
+    const files = [];
+    for (const f of kaynak) files.push({ name: f.name, bytes: await f.lib.save() });
+    return {
+      tur: 'birlestir', ad: 'birlesik.pdf', sayfa: items.length,
+      alt: files.map(f => f.name + '.pdf').join(' + '),
+      veri: { files, items: items.map(([f, p]) => [yeni.get(f), p]) }
+    };
+  }
+  function bildir(m, tur) {
+    status(m, tur || 'ok');
+    toast(m, tur === 'err');
+    try {   // Belge tara ekranı açıkken mesaj orada da görünsün
+      if (typeof trKutu !== 'undefined' && trKutu && trKutu.isConnected && typeof trMesaj === 'function' && getComputedStyle(trKutu).display !== 'none') trMesaj(m);
+    } catch (e) { /* */ }
+  }
+  // V5.2: indirme artık Geçmiş'e eklemez (downloadBytes sarılmıyor); kaydetme menüdeki Kaydet ile yapılır
+  let kaydediyor = false;
+  async function kaydet() {
+    if (kaydediyor) return;
+    const birlestir = V.tab === 'birlestir' && M.items.length;
+    if (!birlestir && !S.lib) { bildir('Kaydedilecek dosya yok. Önce bir PDF açın' + (V.tab === 'birlestir' ? ' ya da Birleştirme listesine dosya ekleyin.' : '.'), 'err'); return; }
+    kaydediyor = true;
+    busy(true, 'Kaydediliyor…');
+    try {
+      let bytes, k;
+      if (birlestir) { bytes = await mergeBytes(); k = await birlesikHazirla(); }
+      else {
+        const r = await currentResult();   // açık düzenleme kutusu kapanır, son hali alınır
+        if (!r) return;
+        bytes = r.bytes; k = await belgeHazirla();
+      }
+      const oz = await ozet(bytes);
+      const L = await liste();
+      const ayni = L.find(x => x.tur === k.tur && x.ad === k.ad && x.oz === oz);
+      if (ayni) { ayni.t = Date.now(); await guncelle(ayni); }
+      else await ekle({ ad: k.ad, t: Date.now(), tur: k.tur, sayfa: k.sayfa, boyut: bytes.length, alt: k.alt, oz }, k.veri);
+      if (!birlestir) S.dirty = false;
+      try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* */ }
+      bildir('Kaydedildi: ' + k.ad + (ayni ? ' (değişiklik yoktu; Geçmiş Dosyalar\'da en üste alındı)' : ' — Geçmiş Dosyalar\'da görünür.'));
+      if (kutu) ciz();
+    } catch (e) {
+      console.error(e);
+      const dolu = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+      bildir('Kaydedilemedi' + (dolu ? ': tarayıcıda yer kalmadı. Geçmiş Dosyalar\'dan eski kayıtları silin.' : ' (' + ((e && e.message) || e) + ').'), 'err');
+    } finally { busy(false); kaydediyor = false; }
+  }
+
+  let toastZ = 0;
+  function toast(m, hata) {
+    let e = document.getElementById('gdMesaj');
+    if (!e) { e = document.createElement('div'); e.id = 'gdMesaj'; e.addEventListener('click', () => e.classList.remove('on')); document.body.appendChild(e); }
+    e.textContent = m; e.classList.toggle('hata', !!hata); e.classList.add('on');
+    const dv = document.getElementById('dvMesaj'); if (dv) dv.classList.remove('on');   // Drive bildirimiyle üst üste binmesin
+    clearTimeout(toastZ); toastZ = setTimeout(() => e.classList.remove('on'), hata ? 7000 : 3500);
+  }
+
+  /* ---------------- Yükle ---------------- */
+  function bekle(ms) { return new Promise(r => setTimeout(r, ms)); }
+  async function belgeYukle(m, v) {
+    const once = S.lib;
+    await openDocFile(new File([v.raw], v.name + '.pdf', { type: 'application/pdf' }));
+    if (!S.lib || S.lib === once) return false;   // vazgeçildi ya da açılamadı
+    try { await AG.insa; } catch (e) { /* */ }
+    S.name = v.name;
+    const n = Math.min(S.pages.length, (v.ov || []).length || S.pages.length);
+    for (let i = 0; i < n; i++) {
+      const pg = S.pages[i];
+      const ov = ((v.ov || [])[i] || []).map(b => Object.assign({}, b, { id: BOX_SEQ++ }));
+      if (ov.length) S.overlays.set(pg.key, ov);
+      if (V16var) {
+        const im = ((v.img || [])[i] || []).filter(o => o.src && o.src.bytes).map(o => {
+          const src = Object.assign({}, o.src, { url: URL.createObjectURL(new Blob([o.src.bytes], { type: o.src.type === 'png' ? 'image/png' : 'image/jpeg' })) });
+          return Object.assign({}, o, { id: V16.seq++, src });
+        });
+        if (im.length) V16.img.set(pg.key, im);
+        const ln = ((v.link || [])[i] || []).map(o => {
+          const c = Object.assign({}, o, { id: V16.seq++, tkey: o.tidx >= 0 && S.pages[o.tidx] ? S.pages[o.tidx].key : '' });
+          delete c.tidx; return c;
+        });
+        if (ln.length) V16.link.set(pg.key, ln);
+      }
+    }
+    if (V16var) {
+      if (v.hf) { V16.hf = Object.assign(v16HfDef(), v.hf); V16.hfSaved = JSON.stringify(V16.hf); }
+      if (v.wm) { V16.wm = Object.assign(v16WmDef(), v.wm); V16.wmSaved = JSON.stringify(V16.wm); }
+      try { v16HfToUi(); v16WmToUi(); } catch (e) { /* */ }
+    }
+    S.dirty = false;
+    V.built = false;
+    const hedef = v.tab && (V16var ? V16.EDIT.includes(v.tab) : false) || v.tab === 'sil' ? v.tab : null;
+    if (hedef && hedef !== V.tab) showTab(hedef);
+    else { if (isEditTab()) await buildEditor(); if (V.tab === 'sil') buildThumbs(); }
+    updateEmpty();
+    try { v16HeaderButtons(); } catch (e) { /* */ }
+    try { if (V.tab === 'aktar') v16BuildExportThumbs(); } catch (e) { /* */ }
+    return true;
+  }
+  async function birlesikYukle(m, v) {
+    if (M.items.length && !confirm('Birleştirme listesinde ' + M.items.length + ' sayfa var.\nListe ekrandan kaldırılıp "' + m.ad + '" kaydı yüklensin mi?')) return false;
+    if (M.items.length) ybKapat();
+    busy(true, 'Birleştirme listesi yükleniyor…');
+    try {
+      const yer = [];
+      for (const f of v.files) {
+        const lib = await PDFLib.PDFDocument.load(f.bytes, { updateMetadata: false });
+        const js = await pdfjsLib.getDocument({ data: f.bytes.slice(), isEvalSupported: false }).promise;
+        yer.push(M.files.push({ name: f.name, lib, js }) - 1);
+      }
+      for (const [f, p] of v.items) M.items.push({ f: yer[f], p, el: null, done: false });
+      if (V.tab !== 'birlestir') showTab('birlestir');
+      buildMergeGrid();
+    } finally { busy(false); }
+    updateEmpty();
+    return true;
+  }
+  async function yukle(m) {
+    busy(true, 'Yükleniyor…');
+    let v;
+    try { v = await veriOku(m.id); } finally { busy(false); }
+    if (!v) { status('"' + m.ad + '" kaydının içeriği bulunamadı.', 'err'); return; }
+    kapat();
+    try {
+      const oldu = m.tur === 'birlestir' ? await birlesikYukle(m, v) : await belgeYukle(m, v);
+      if (oldu) status(m.tur === 'birlestir'
+        ? '"' + m.ad + '" Birleştirme listesine yüklendi (' + M.items.length + ' sayfa).'
+        : m.ad + ' Geçmiş Dosyalar\'dan yüklendi' + (m.tur === 'belge' ? ', düzenlemeleriyle.' : '.'), 'ok');
+    } catch (e) { errMsg(e); }
+  }
+
+  /* ---------------- liste penceresi ---------------- */
+  const ZAMAN = t => { const d = new Date(t), p = n => (n < 10 ? '0' : '') + n; return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); };
+  const BOYUT = b => b >= 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+  const TUR = { belge: 'Düzenlenen PDF', birlestir: 'Birleştirme', tarama: 'Tarama' };
+  const SIMGE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>';
+
+  function kapat() { if (kutu) { kutu.remove(); kutu = null; document.removeEventListener('keydown', esc, true); } }
+  function esc(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); kapat(); } }
+  function pencere() {
+    kapat();
+    kutu = document.createElement('div'); kutu.id = 'gdMaske';
+    kutu.innerHTML = '<div id="gdKutu" role="dialog" aria-modal="true" aria-label="Geçmiş Dosyalar">' +
+      '<div id="gdBas"><span class="gd-ttl">' + SIMGE + 'GEÇMİŞ DOSYALAR</span><button type="button" class="gd-x" aria-label="Kapat" title="Kapat">✕</button></div>' +
+      '<div id="gdGovde"><div class="gd-bos">Yükleniyor…</div></div>' +
+      '<div id="gdAlt">Sol menüdeki <b>Kaydet</b> ile kaydettiğiniz dosyalar burada kalır; siz silmedikçe silinmez. Sayfayı temizle, Yedek Yükle ve Drive bu kayıtlara dokunmaz.</div></div>';
+    kutu.addEventListener('click', e => { if (e.target === kutu) kapat(); });
+    kutu.querySelector('.gd-x').addEventListener('click', kapat);
+    document.body.appendChild(kutu);
+    document.addEventListener('keydown', esc, true);
+    ciz();
+  }
+  async function ciz() {
+    if (!kutu) return;
+    const g = kutu.querySelector('#gdGovde');
+    let L;
+    try { L = await liste(); } catch (e) { g.innerHTML = '<div class="gd-bos">Geçmiş Dosyalar okunamadı: ' + String((e && e.message) || e).replace(/</g, '&lt;') + '</div>'; return; }
+    if (!kutu) return;
+    g.innerHTML = '';
+    if (!L.length) {
+      g.innerHTML = '<div class="gd-bos">Kayıtlı dosya yok.<br>Düzenlediğiniz PDF\'i sol menüdeki <b>Kaydet</b> ile kaydettiğinizde buraya eklenir.</div>';
+      return;
+    }
+    for (const m of L) {
+      const it = document.createElement('div'); it.className = 'gd-oge';
+      it.innerHTML = '<div class="gd-ad"><b></b><span class="gd-bil"></span><span class="gd-alt"></span></div>' +
+        '<button type="button" class="gd-yukle">Yükle</button><button type="button" class="gd-sil">Sil</button>';
+      it.querySelector('b').textContent = m.ad;
+      it.querySelector('.gd-bil').textContent = ZAMAN(m.t) + ' • ' + (TUR[m.tur] || 'PDF') + ' • ' + m.sayfa + ' sayfa • ' + BOYUT(m.boyut || 0);
+      const alt = it.querySelector('.gd-alt'); if (m.alt) alt.textContent = m.alt; else alt.remove();
+      it.querySelector('.gd-yukle').addEventListener('click', () => yukle(m));
+      it.querySelector('.gd-sil').addEventListener('click', async () => {
+        if (!confirm('"' + m.ad + '" (' + ZAMAN(m.t) + ') Geçmiş Dosyalar\'dan silinsin mi?\n\nBilgisayarınıza indirilen PDF dosyası silinmez.')) return;
+        try { await sil(m.id); status('"' + m.ad + '" Geçmiş Dosyalar\'dan silindi.', 'ok'); } catch (e) { errMsg(e); }
+        ciz();
+      });
+      g.appendChild(it);
+    }
+  }
+
+  /* ---------------- düğmeler ---------------- */
+  function dugmeleriKur() {
+    const st = document.createElement('style');
+    st.textContent =
+      '#gdMaske{position:fixed;inset:0;background:rgba(20,24,30,.62);z-index:2147482900;display:flex;align-items:center;justify-content:center;padding:18px}' +
+      '#gdKutu{background:#fff;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.45);display:flex;flex-direction:column;width:620px;max-width:94vw;max-height:82vh;overflow:hidden}' +
+      '#gdBas{display:flex;align-items:center;gap:10px;background:#6d4c41;color:#fff;padding:10px 14px;flex:none}' +
+      '#gdBas .gd-ttl{flex:1;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;letter-spacing:.3px}' +
+      '#gdBas .gd-ttl svg{width:17px;height:17px;fill:currentColor}' +
+      '#gdBas .gd-x{border:0;background:#a32020;color:#fff;border-radius:5px;padding:5px 10px;font-size:13px;line-height:1;cursor:pointer}' +
+      '#gdBas .gd-x:hover{background:#861a1a}' +
+      '#gdGovde{overflow:auto;flex:1}' +
+      '.gd-oge{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #e2e6ec}' +
+      '.gd-oge:hover{background:#faf7f5}' +
+      '.gd-ad{flex:1;min-width:0}' +
+      '.gd-ad b{display:block;font-size:13.5px;color:#1e2836;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.gd-ad span{display:block;font-size:11.5px;color:#6b7482;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.gd-yukle,.gd-sil{flex:none;height:32px;padding:0 14px;border-radius:5px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}' +
+      '.gd-yukle{border:1px solid #154a91;background:#1a56a8;color:#fff}.gd-yukle:hover{background:#134282}' +
+      '.gd-sil{border:1px solid #cbd5e1;background:#fff;color:#b3261e}.gd-sil:hover{background:#fdf1f0;border-color:#b3261e}' +
+      '.gd-bos{padding:30px 20px;text-align:center;color:#6b7482;font-size:13px;line-height:1.6}' +
+      '#gdAlt{flex:none;padding:9px 14px;background:#f6f7f9;border-top:1px solid #e2e6ec;color:#6b7482;font-size:11.5px;line-height:1.45}' +
+      '.mn-belge-ust .btn.mn-h-gecmis{background:#fff;border-color:#cbd5e1;color:#6d4c41}' +
+      '.mn-belge-ust .btn.mn-h-gecmis svg{fill:#6d4c41}' +
+      '.mn-belge-ust .btn.mn-h-gecmis:hover{background:#f7f1ee;border-color:#6d4c41}' +
+      '@media (max-width:560px){.gd-oge{flex-wrap:wrap}.gd-ad{flex-basis:100%}.gd-yukle,.gd-sil{flex:1}}' +
+      '#gdKaydet .mn-ad{color:#2e7d32;font-weight:700}' +
+      '#gdKaydet .ko-ok{display:none !important}' +
+      '#dvDrive .mn-ad{color:#1565c0;font-weight:700}' +   // Drive'a Bağla mavi yazı (simgenin rengi yine bağlantı durumunu gösterir)   // indirme oku: bu Kaydet indirmez
+      '#gdMesaj{position:fixed;left:50%;top:64px;transform:translate(-50%,-16px);max-width:min(560px,92vw);padding:11px 16px;border-radius:10px;' +
+      'background:#2e7d32;color:#fff;font-size:14px;line-height:1.4;box-shadow:0 6px 24px rgba(0,0,0,.25);z-index:2147483001;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;cursor:pointer}' +
+      '#gdMesaj.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}' +
+      '#gdMesaj.hata{background:#b42318}' +
+      '.bars .bar [data-act=open],.bars .bar [data-act=save],.bars .bar #mOpen,.bars .bar #mSave,.bars .bar .gd-gizli{display:none !important}' +
+      '@media print{#gdMaske,#gdMesaj{display:none !important}}';
+    document.head.appendChild(st);
+    // belgenin üstündeki satır: SAYFAYI TEMİZLE'nin yanına
+    const tem = document.getElementById('hTemizle');
+    if (tem && !document.getElementById('hGecmis')) {
+      const b = document.createElement('button');
+      b.className = 'btn mn-hik mn-h-gecmis'; b.id = 'hGecmis'; b.type = 'button';
+      b.setAttribute('aria-label', 'Geçmiş Dosyalar'); b.dataset.ipucu = 'Kaydettiğiniz PDF\'leri geri yükler';
+      b.innerHTML = SIMGE + '<span>GEÇMİŞ DOSYALAR</span>';
+      b.addEventListener('click', pencere);
+      tem.after(b);
+    }
+    // sol menü: ARAÇLAR altında Görünüm'den sonra, Yedek Al'dan önce
+    if (typeof mnOge === 'function' && typeof MN !== 'undefined' && MN.paneller && MN.paneller.tum && !document.getElementById('gdMenu')) {
+      MN_IKON.gecmis = '<path d="M4 12a8 8 0 1 0 2.35-5.65"/><path d="M4 4.5V8.5h4"/><path d="M12 8v4.2l2.8 1.8"/>';
+      const o = mnOge('gecmis', 'Geçmiş Dosyalar', '#6d4c41', pencere); o.id = 'gdMenu';
+      o.title = 'KAYDET ile kaydettiğiniz PDF\'ler; Yükle düzenlemeleriyle geri getirir.';
+      const yer = document.getElementById('dvYedekAl') || [...MN.paneller.tum.querySelectorAll('.mn-oge[data-tab="gorunum"]')].map(x => x.nextSibling)[0];
+      if (yer && yer.parentNode) yer.parentNode.insertBefore(o, yer); else MN.paneller.tum.append(o);
+    }
+    if (typeof mnOge === 'function' && document.getElementById('gdMenu') && !document.getElementById('gdKaydet')) {
+      MN_IKON.gdkaydet = '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/><path d="M8 20v-6h8v6"/>';
+      const k = mnOge('gdkaydet', 'Kaydet', '#2e7d32', kaydet); k.id = 'gdKaydet';
+      k.title = 'Açık PDF\'i düzenlemeleriyle Geçmiş Dosyalar\'a kaydeder (indirmez).';
+      const g = document.getElementById('gdMenu'); g.parentNode.insertBefore(k, g);
+    }
+    // Drive'a Bağla, Geçmiş Dosyalar'ın hemen altına (V5.2 EK)
+    const gm = document.getElementById('gdMenu'), dv = document.getElementById('dvDrive');
+    if (gm && dv && gm.nextElementSibling !== dv) gm.after(dv);
+  }
+  dugmeleriKur();
+  // üst araç çubuğu: PDF Aç / Kaydet gizlenince baştaki ayraç da gizlenir
+  function ayracDuzelt() {
+    for (const bar of document.querySelectorAll('.bars .bar')) {
+      for (const c of bar.children) {
+        if (c.classList.contains('sep')) { c.classList.add('gd-gizli'); continue; }
+        if (c.matches('[data-act=open],[data-act=save],#mOpen,#mSave')) continue;
+        break;
+      }
+    }
+  }
+  ayracDuzelt();
+  window.pdfGecmis = { pencere, kapat, kaydet, liste, yukle, sil, veriOku };
 })();
 
 </script>
