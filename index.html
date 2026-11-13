@@ -9390,7 +9390,7 @@ openDocFile = async function (file) {
     '<text x="17" y="25.3" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.6" font-weight="700" fill="#fff">PDF</text>' +
     '<path d="M32 29h6.5v7.5h4.5L35.25 45 27.5 36.5H32z" fill="#e3060f"/>' +
     '</svg></span>' +
-    '<span class="bl-yazi"><b>PDF_Düzenleme_Programı_V4.5</b></span>';
+    '<span class="bl-yazi"><b>PDF_Düzenleme_Programı_V4.8</b></span>';
   header.insertAdjacentHTML('beforeend',
     '<div class="bl-zoom"><button type="button" class="bl-zb" id="blKucult" title="Uzaklaştır">−</button>' +
     '<span class="bl-zv" id="blYuzde">%100</span>' +
@@ -16347,6 +16347,39 @@ function spPencere() {
      tarama (otomatik çekim açık, kısa bekleme, elle çekimde de kamerada
      kalınır), Fotoğraftan oluştur (galeri doğrudan açılır), Dosyaları
      birleştir (programın birleştirme aracı).
+
+   EK — 12.11.2026 (V4.6):
+   - Kâğıdın dört dış kenarından yakalama: kâğıt kadraja dayanınca ya da
+     taşınca görünen kenarı görüntünün sınırı sayılır (Adobe Scan gibi);
+     sayfanın içindeki tablo/yazı çerçevesi artık seçilmez. Kadraj
+     kenarına çok yakın kâğıt kenarı da bulunur.
+   - Sonuç ekranında Adobe Scan'deki alt araç şeridi (kaydırılır):
+     Yeniden çek, Kırp, Döndür, Filtreler (küçük resimli), Ayarla
+     (parlaklık/kontrast), İşaretle (kalem; siyah, mavi, kırmızı, yeşil,
+     fosforlu sarı; kalınlık), Temizleme (silgi: çevreleyen renkle ya da
+     seçilen renkle doldur, sayfadan renk alma, boyut; geri al/yinele),
+     Yeniden Boyutlandır (PDF sayfa boyu: Orijinal, A4, A5, A3, Letter,
+     Legal, Kartvizit), Sil. Araç açıkken üstte X (vazgeç), geri al,
+     yinele, ✓ (uygula) çıkar. Çizimler sayfayla birlikte döner.
+
+   EK — 12.11.2026 (V4.7):
+   - iPhone'da kamera görüntüsü sahneyi doldurmuyordu ve mavi çerçeve
+     görüntüye göre kayık/büyük çiziliyordu: video sahneyi tam kaplar,
+     çerçeve videonun ekrandaki gerçek kutusuna göre çizilir.
+   - Yakından çekim: kâğıt kadrajı üç yandan taşınca (tek kenarı görünür)
+     da kâğıt yakalanır; sayfanın üstündeki büyük renkli şekil (resim,
+     çocuk etkinliği), tablo, yazı bloğu seçilmez. İçi boş masa/duvar
+     kâğıt sayılmaz.
+   - Yüksek hızlı tarama: sayfa çevrilince bekleme çabuk biter; sayfanın
+     kendi izi karşılaştırılır, benzer düzendeki sayfalar da tek tek çekilir.
+
+   EK — 13.11.2026 (V4.8):
+   - Kırpma taranmış (düzleşmiş) sayfanın üstünde yapılır: tutamağa basınca
+     ya da Kırp'a dokununca görünüm geri gitmez, büyüyüp küçülmez; çerçeve
+     sayfanın kenarlarından içeri (biraz da dışarı) çekilir, Tamam'da kaynak
+     fotoğrafa çevrilip uygulanır. Otomatik bul / Tüm fotoğraf hemen uygulanır.
+   - iPhone'da kamera görüntüsü sol üst köşede küçük açılıyordu: video
+     sahneyi piksel ölçüsüyle kaplar.
    Programın kendi koduna dokunulmadı.
    ===================================================================== */
 'use strict';
@@ -16371,7 +16404,16 @@ const TR_IK = {
   sil: '<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 10.5v6M14 10.5v6"/>',
   paylas: '<path d="M12 15V3.5M7.5 8L12 3.5 16.5 8"/><path d="M5 11.5V20h14v-8.5"/>',
   duzenle: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
-  yeni: '<path d="M12 5v14M5 12h14"/>'
+  yeni: '<path d="M12 5v14M5 12h14"/>',
+  filtreler: '<circle cx="9" cy="9.5" r="5"/><circle cx="15" cy="9.5" r="5"/><circle cx="12" cy="14.8" r="5"/>',
+  ayarla: '<circle cx="12" cy="12" r="3.8"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/>',
+  isaretle: '<path d="M3 18.5c1.6-5.2 3.4-10.5 5.2-10.5 2 0-.8 9.6 1.2 9.6 1.7 0 2.9-7.6 4.9-7.6 1.6 0 .7 5.6 2.3 5.6 1 0 1.8-1.6 2.9-3.2"/>',
+  temizle: '<path d="M9 20h11M5.2 14.2l8.6-8.6a2 2 0 0 1 2.8 0l2.8 2.8a2 2 0 0 1 0 2.8L12 18.6a2 2 0 0 1-1.4.6H8.4a2 2 0 0 1-1.4-.6l-1.8-1.8a2 2 0 0 1 0-2.6zM9.6 9.8l4.6 4.6"/>',
+  boyutlandir: '<rect x="3.5" y="3.5" width="17" height="17" rx="1.6"/><path d="M8 13.5V16h2.5M16 10.5V8h-2.5M8 16l3.2-3.2M16 8l-3.2 3.2"/>',
+  geri: '<path d="M9 13.5L4.5 9 9 4.5"/><path d="M4.5 9h10a5.5 5.5 0 0 1 0 11H11"/>',
+  ileri: '<path d="M15 13.5L19.5 9 15 4.5"/><path d="M19.5 9h-10a5.5 5.5 0 0 0 0 11H13"/>',
+  tamam: '<path d="M5 12.5l4.2 4.2L19 7"/>',
+  damla: '<path d="M14.6 6.4l3 3M16.6 3.4a2.1 2.1 0 0 1 3 3l-2.1 2.1-3-3zM15.2 7.8L6 17l-.9 2.9L8 19l9.2-9.2"/>'
 };
 
 function trAdUret() {
@@ -16495,9 +16537,12 @@ function trCanny(g, w, h, oran) {
       if (!kenar[i]) continue;
       const m = mag[i]; if (!m) continue;
       const ux = GX[i] / m, uy = GY[i] / m;
-      const x1 = (x + ux * 5 + 0.5) | 0, y1 = (y + uy * 5 + 0.5) | 0, x2 = (x - ux * 5 + 0.5) | 0, y2 = (y - uy * 5 + 0.5) | 0;
-      const x3 = (x + ux * 8 + 0.5) | 0, y3 = (y + uy * 8 + 0.5) | 0, x4 = (x - ux * 8 + 0.5) | 0, y4 = (y - uy * 8 + 0.5) | 0;
-      if (x3 < 0 || y3 < 0 || x3 >= w || y3 >= h || x4 < 0 || y4 < 0 || x4 >= w || y4 >= h || x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0 || x1 >= w || y1 >= h || x2 >= w || y2 >= h) continue;
+      // V4.6: görüntü sınırına çok yakın kenarda (kâğıt kadraja dayanınca) yakın örnekler kullanılır
+      let r1 = 5, r2 = 8;
+      const disarda = (r) => { const xa = (x + ux * r + 0.5) | 0, ya = (y + uy * r + 0.5) | 0, xb = (x - ux * r + 0.5) | 0, yb = (y - uy * r + 0.5) | 0; return xa < 0 || ya < 0 || xa >= w || ya >= h || xb < 0 || yb < 0 || xb >= w || yb >= h; };
+      if (disarda(8)) { r1 = 3; r2 = 5; if (disarda(5)) continue; }
+      const x1 = (x + ux * r1 + 0.5) | 0, y1 = (y + uy * r1 + 0.5) | 0, x2 = (x - ux * r1 + 0.5) | 0, y2 = (y - uy * r1 + 0.5) | 0;
+      const x3 = (x + ux * r2 + 0.5) | 0, y3 = (y + uy * r2 + 0.5) | 0, x4 = (x - ux * r2 + 0.5) | 0, y4 = (y - uy * r2 + 0.5) | 0;
       const f1 = g[y1 * w + x1] - g[y2 * w + x2], f2 = g[y3 * w + x3] - g[y4 * w + x4];
       if ((f1 > 0) !== (f2 > 0)) continue;
       const enAz = Math.min(f1 < 0 ? -f1 : f1, f2 < 0 ? -f2 : f2);
@@ -16648,6 +16693,7 @@ function trKenarBul(kaynak, enBoy, onceki) {
 function trKenarBulGri(g0, w, h, onceki, hafif) {
   const g = trBulanik(g0, w, h);
   const adaylar = [];
+  let C1 = null, sonuc = null;
   for (const oran of [1, 0.6]) {
     const C = trCanny(g, w, h, oran);
     const destekHarita = C;
@@ -16683,10 +16729,25 @@ function trKenarBulGri(g0, w, h, onceki, hafif) {
       if (a.kn.filter(p => icinde(p, b.kn)).length >= 3) { a.puan -= 0.15; break; }
     }
     let en = null; for (const a of gecerli) if (!en || a.puan > en.puan) en = a;
-    if (en) return en.kn;
+    if (oran === 1) C1 = C;
+    if (en) { sonuc = en; break; }
     adaylar.length = 0;
   }
-  return null;
+  // V4.6: kâğıt kadraja dayanıyor/taşıyorsa (sıkı denetimden geçmiş taşan aday) ve bulunan dörtgen
+  // onun içinde kalıyorsa (kâğıdın içindeki tablo/yazı çerçevesi), kâğıdın görünen dış sınırı seçilir
+  const tas = C1 ? trTasanBul(g, w, h, C1, hafif) : null;
+  if (tas) {
+    // üç yandan taşan aday: içi kâğıt gibi olmalı (yazı/şekil var, açık renkli); boş masa, duvar,
+    // masa kenarı kâğıt sanılmasın
+    if (tas.sinirSay === 3 && !trKagitIcMi(tas.kn, C1, g, w, h)) return sonuc ? sonuc.kn : null;
+    if (!sonuc) return tas.kn;
+    const icinde = (p, q) => { let s0 = 0; for (let i = 0; i < 4; i++) { const a = q[i], b = q[(i + 1) % 4]; const z = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]); const sg = z > 0.003 ? 1 : z < -0.003 ? -1 : 0; if (!sg) continue; if (!s0) s0 = sg; else if (sg !== s0) return false; } return true; };
+    // üç yandan taşmada ek şart: bulunan dörtgen çevresinden açık bir kâğıt olmamalı (masadaki kâğıt
+    // korunur; kâğıdın üstündeki renkli şekil, tablo, yazı bloğu ise taşan kâğıda bırakılır)
+    if (tas.alan >= sonuc.alan * 1.02 && sonuc.kn.filter(p => icinde(p, tas.kn)).length >= 3 &&
+      (tas.sinirSay < 3 || trKenarFarki(sonuc.kn, g, w, h) < 10)) return tas.kn;
+  }
+  return sonuc ? sonuc.kn : null;
 }
 /* eski yöntem (koyu zeminde açık kâğıt): parlak bölgenin uç noktaları; piksel olarak döner */
 function trKenarBulParlak(g, w, h) {
@@ -16723,12 +16784,185 @@ function trKenarBulParlak(g, w, h) {
   const Z = trZarf(P);
   return trEnBuyukDortgen(Z);
 }
+/* V4.6 — kadraja dayanan / taşan kâğıt (Adobe Scan gibi): kâğıdın bir ya da iki kenarı
+   görüntünün dışında kalınca o kenar görüntünün sınırı sayılır. Ayrı ve sıkı değerlendirilir:
+   sınırda olmayan kenarlar gerçek kâğıt/zemin geçişi olmalı (kâğıt içi hep daha açık),
+   sınırdaki kenarın iç tarafı da kâğıdın içi gibi olmalı (masa ya da zemin değil). */
+function trOrtanca(a) { if (!a.length) return 0; a.sort((x, y) => x - y); return a[a.length >> 1]; }
+function trTasanDegerlendir(k, C, g, w, h) {
+  const B = Math.max(3, Math.min(w, h) * 0.02);
+  const cx = (k[0][0] + k[1][0] + k[2][0] + k[3][0]) / 4, cy = (k[0][1] + k[1][1] + k[2][1] + k[3][1]) / 4;
+  const kenar = C.kenarB, GX = C.GX, GY = C.GY, M = C.mag, N = 40;
+  const K = [];
+  let sinirSay = 0, top = 0, enAz = 1, nG = 0;
+  for (let s = 0; s < 4; s++) {
+    const a = k[s], b = k[(s + 1) % 4];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+    if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }
+    const sinirda = (a[0] <= B && b[0] <= B) || (a[1] <= B && b[1] <= B) || (a[0] >= w - B && b[0] >= w - B) || (a[1] >= h - B && b[1] >= h - B);
+    // t = 1..N-1 boyunca: kenar desteği (vur), iç ve dış parlaklık
+    const vur = new Int8Array(N), vurG = new Int8Array(N), ic = new Float32Array(N).fill(NaN), dis = new Float32Array(N).fill(NaN);
+    let var_ = 0, isaret = 0;
+    for (let t = 1; t < N; t++) {
+      const px = a[0] + (b[0] - a[0]) * t / N, py = a[1] + (b[1] - a[1]) * t / N;
+      const io = sinirda ? 8 : 6;
+      const xi = Math.round(px + nx * io), yi = Math.round(py + ny * io), xo = Math.round(px - nx * 6), yo = Math.round(py - ny * 6);
+      if (xi >= 0 && yi >= 0 && xi < w && yi < h) ic[t] = g[yi * w + xi];
+      if (xo >= 0 && yo >= 0 && xo < w && yo < h) dis[t] = g[yo * w + xo];
+      if (sinirda) continue;
+      // ±2 piksel: kenar desteği; ±4 piksel: köşeye yakın parçada (düz çizgi uca doğru biraz sapabilir)
+      for (const o of [0, -1, 1, -2, 2, -3, 3, -4, 4]) {
+        const x = Math.round(px + nx * o), y = Math.round(py + ny * o);
+        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        const i = y * w + x; if (!kenar[i] || !M[i]) continue;
+        const d = (GX[i] * nx + GY[i] * ny) / M[i];
+        if (Math.abs(d) > 0.82) {
+          vurG[t] = 1;
+          if (Math.abs(o) <= 2) { var_++; vur[t] = d > 0 ? 1 : -1; isaret += vur[t]; }
+          break;
+        }
+      }
+    }
+    K.push({ sinirda, vur, vurG, ic, dis });
+    if (sinirda) { sinirSay++; continue; }
+    const oran = var_ / (N - 1), tutarli = var_ ? Math.abs(isaret) / var_ : 0;
+    const fk = []; for (let t = 1; t < N; t++) if (ic[t] === ic[t] && dis[t] === dis[t]) fk.push(ic[t] - dis[t]);
+    if (fk.length < 10) return null;
+    const f = trOrtanca(fk);
+    if (oran < 0.5 || tutarli < 0.75 || f < 10) return null;
+    K[s].oran = oran; K[s].tutarli = tutarli; K[s].f = f;
+    nG++; top += oran; if (oran < enAz) enAz = oran;
+  }
+  // V4.6 EK: kâğıt kadrajı üç yandan taşıyorsa (yakından çekim) tek görünen kenar çok belirgin olmalı
+  if (sinirSay < 1 || sinirSay > 3 || nG < (sinirSay === 3 ? 1 : 2)) return null;
+  if (sinirSay === 3) {
+    const G = K.find(q => !q.sinirda);
+    if (G.oran < 0.7 || G.tutarli < 0.85 || G.f < 15) return null;
+  }
+  // sınırdaki her kenarın iki ucunda: komşu kâğıt kenarı görüntü sınırına kadar sürüyor mu,
+  // ve sınırın iç tarafı oradaki kâğıt içiyle aynı mı (ışık farkı yerel karşılaştırmayla elenir)
+  const P = Math.round(N * 0.22);
+  for (let s = 0; s < 4; s++) {
+    const S = K[s]; if (!S.sinirda) continue;
+    for (const uc of [0, 1]) {
+      const ks = uc === 0 ? (s + 3) % 4 : (s + 1) % 4, Kk = K[ks];
+      if (Kk.sinirda) continue;
+      // komşu kenarın bu köşeye yakın parçası: s'nin başı (uc 0) komşunun sonudur
+      const t0 = uc === 0 ? N - P : 1, t1 = uc === 0 ? N - 1 : P;
+      let v = 0, m = 0, vSon = 0; const kf = [], ki = [], kd = [];
+      for (let t = t0; t <= t1; t++) {
+        m++; if (Kk.vurG[t]) { v++; if (uc === 0 ? t >= N - 5 : t <= 4) vSon++; }
+        if (Kk.ic[t] === Kk.ic[t] && Kk.dis[t] === Kk.dis[t]) { kf.push(Kk.ic[t] - Kk.dis[t]); ki.push(Kk.ic[t]); kd.push(Kk.dis[t]); }
+      }
+      // kâğıt kenarı sınıra kadar sürmeli (kâğıdın köşesi kadrajın içindeyse sınıra yakın parçada kenar yoktur)
+      if (v / m < 0.4 || vSon < 2 || kf.length < 3 || trOrtanca(kf) < 8) return null;
+      // sınırın iç tarafı (birkaç sıra) oradaki kâğıda zeminden daha çok benzemeli. Yazı satırları
+      // koyu olduğundan açık uç (%85) alınır: kâğıdın beyazı yazıdan baskındır; masa her yerde aynıdır.
+      const si = [], a = k[s], b = k[(s + 1) % 4], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+      if ((cx - (a[0] + b[0]) / 2) * nx + (cy - (a[1] + b[1]) / 2) * ny < 0) { nx = -nx; ny = -ny; }
+      const u0 = uc === 0 ? 1 : N - P, u1 = uc === 0 ? P : N - 1;
+      for (let t = u0; t <= u1; t++) for (const io of [2, 4, 6]) {
+        const x = Math.round(a[0] + (b[0] - a[0]) * t / N + nx * io), y = Math.round(a[1] + (b[1] - a[1]) * t / N + ny * io);
+        if (x >= 0 && y >= 0 && x < w && y < h) si.push(g[y * w + x]);
+      }
+      if (si.length < 8) return null;
+      si.sort((x, y) => x - y);
+      const sv = si[Math.floor(si.length * 0.85)];
+      if (Math.abs(sv - trOrtanca(ki)) >= Math.abs(sv - trOrtanca(kd))) return null;
+    }
+    // iki komşusu da sınırda olan kenar (üç yandan taşmada görünen kenarın karşısı): boydan boya
+    // iç tarafı kâğıda zeminden daha çok benzemeli
+    if (K[(s + 3) % 4].sinirda && K[(s + 1) % 4].sinirda) {
+      const ki = [], kd = [];
+      for (const q of K) if (!q.sinirda) for (let t = 1; t < N; t++) if (q.ic[t] === q.ic[t] && q.dis[t] === q.dis[t]) { ki.push(q.ic[t]); kd.push(q.dis[t]); }
+      const si = [], a = k[s], b = k[(s + 1) % 4], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+      if ((cx - (a[0] + b[0]) / 2) * nx + (cy - (a[1] + b[1]) / 2) * ny < 0) { nx = -nx; ny = -ny; }
+      for (let t = 1; t < N; t++) for (const io of [2, 4, 6]) {
+        const x = Math.round(a[0] + (b[0] - a[0]) * t / N + nx * io), y = Math.round(a[1] + (b[1] - a[1]) * t / N + ny * io);
+        if (x >= 0 && y >= 0 && x < w && y < h) si.push(g[y * w + x]);
+      }
+      if (si.length < 8 || ki.length < 8) return null;
+      si.sort((x, y) => x - y);
+      const sv = si[Math.floor(si.length * 0.85)];
+      if (Math.abs(sv - trOrtanca(ki)) >= Math.abs(sv - trOrtanca(kd))) return null;
+    }
+  }
+  return { ort: top / nG, enAz, sinirSay };
+}
+/* bir dörtgenin kenarlarında iç-dış parlaklık farkı (en zayıf kenar, işaretli): kâğıdın kendi
+   kenarında iç (kâğıt) zeminden açıktır; sayfadaki renkli şekil/tablo/yazı çerçevesinde fark yoktur
+   ya da iç taraf daha koyudur */
+function trKenarFarki(kn, g, w, h) {
+  const k = kn.map(p => [p[0] * w, p[1] * h]);
+  const cx = (k[0][0] + k[1][0] + k[2][0] + k[3][0]) / 4, cy = (k[0][1] + k[1][1] + k[2][1] + k[3][1]) / 4;
+  const F = [];
+  for (let s = 0; s < 4; s++) {
+    const a = k[s], b = k[(s + 1) % 4], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+    if ((cx - (a[0] + b[0]) / 2) * nx + (cy - (a[1] + b[1]) / 2) * ny < 0) { nx = -nx; ny = -ny; }
+    const fk = [];
+    for (let t = 1; t < 24; t++) {
+      const px = a[0] + (b[0] - a[0]) * t / 24, py = a[1] + (b[1] - a[1]) * t / 24;
+      const xi = Math.round(px + nx * 6), yi = Math.round(py + ny * 6), xo = Math.round(px - nx * 6), yo = Math.round(py - ny * 6);
+      if (xi < 0 || yi < 0 || xi >= w || yi >= h || xo < 0 || yo < 0 || xo >= w || yo >= h) continue;
+      fk.push(g[yi * w + xi] - g[yo * w + xo]);
+    }
+    if (fk.length < 8) continue;
+    F.push(trOrtanca(fk));
+  }
+  // en zayıf ikinci kenar: üst üste iki kâğıtta tek kenar koyu kalabilir; renkli şekil/tablo/yazı
+  // bloğunda kenarların çoğu zayıftır
+  F.sort((a, b) => a - b);
+  return F.length > 1 ? F[1] : (F[0] || 0);
+}
+/* dörtgenin iç bölgesi kâğıt gibi mi: içinde yazı/şekil kenarı var ve açık renkli */
+function trKagitIcMi(kn, C, g, w, h) {
+  const k = kn.map(p => [p[0] * w, p[1] * h]);
+  const cx = (k[0][0] + k[1][0] + k[2][0] + k[3][0]) / 4, cy = (k[0][1] + k[1][1] + k[2][1] + k[3][1]) / 4;
+  const q = k.map(p => [cx + (p[0] - cx) * 0.84, cy + (p[1] - cy) * 0.84]);
+  let n = 0, e = 0; const v = [];
+  for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+    let s0 = 0, ic = true;
+    for (let i = 0; i < 4; i++) { const a = q[i], b = q[(i + 1) % 4]; const sg = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) > 0 ? 1 : -1; if (!s0) s0 = sg; else if (sg !== s0) { ic = false; break; } }
+    if (!ic) continue;
+    const j = y * w + x; n++;
+    if (C.kenar[j] || C.kenar[j + 1] || C.kenar[j + w] || C.kenar[j + w + 1]) e++;
+    v.push(g[j]);
+  }
+  if (n < 50) return false;
+  v.sort((a, b) => a - b);
+  return e / n >= 0.03 && v[Math.floor(v.length * 0.9)] >= 150;
+}
+function trTasanBul(g, w, h, C, hafif) {
+  let en = null;
+  for (const q of trHoughAdaylari(C.kenarB, w, h, hafif ? 14 : 20, true)) {
+    const k = trSirala(q.map(p => [Math.min(w, Math.max(0, p[0])), Math.min(h, Math.max(0, p[1]))]));
+    const kn = k.map(p => [p[0] / w, p[1] / h]);
+    if (!trDisbukey(kn)) continue;
+    const alan = trAlan(kn);
+    if (alan < 0.3 || alan > 0.985 || !trAciOk(k)) continue;
+    const d = trTasanDegerlendir(k, C, g, w, h);
+    if (!d) continue;
+    // görüntü sınırına oturan her kenar biraz geri düşer: kâğıdın kendi kenarı görünüyorsa o seçilir
+    const puan = d.ort * 0.6 + d.enAz * 0.4 + Math.sqrt(alan) * 0.35 - 0.06 * d.sinirSay;
+    if (!en || puan > en.puan) en = { puan, kn, alan, sinirSay: d.sinirSay };
+  }
+  return en;
+}
 /* düz çizgi (Hough) adayları: kâğıdın dört kenarı çizgi olarak bulunur, kesişimleri köşe olur.
    Kâğıdın bir köşesi elle, başka bir kâğıtla örtülse de kenar çizgileri yeterlidir. */
-function trHoughAdaylari(kenar, w, h, enCok) {
+function trHoughAdaylari(kenar, w, h, enCok, sinirli) {
   const A = 180, diag = Math.ceil(Math.hypot(w, h)), R = 2 * diag + 1;
-  const acc = new Uint16Array(A * R), cs = new Float32Array(A), sn = new Float32Array(A);
+  const cs = new Float32Array(A), sn = new Float32Array(A);
   for (let t = 0; t < A; t++) { cs[t] = Math.cos(t * Math.PI / 180); sn[t] = Math.sin(t * Math.PI / 180); }
+  // aynı kenar haritası için tepeler bir kez bulunur (taşan kâğıt araması yeniden kullanır)
+  let tepe = kenar.trTepe;
+  if (!tepe) {
+  const acc = new Uint16Array(A * R);
   let sayi = 0; for (let i = 0; i < w * h; i++) if (kenar[i]) sayi++;
   const adim = sayi > 24000 ? 2 : 1;
   let say = 0;
@@ -16738,7 +16972,7 @@ function trHoughAdaylari(kenar, w, h, enCok) {
     for (let t = 0; t < A; t++) acc[t * R + Math.round(x * cs[t] + y * sn[t]) + diag]++;
   }
   const esik = Math.max(12, Math.min(w, h) * 0.16 / adim);
-  const tepe = [];
+  tepe = [];
   for (let t = 0; t < A; t++) for (let r = 0; r < R; r++) {
     const v = acc[t * R + r]; if (v < esik) continue;
     let enBuyuk = true;
@@ -16752,7 +16986,11 @@ function trHoughAdaylari(kenar, w, h, enCok) {
     if (enBuyuk) tepe.push({ t, r: r - diag, v });
   }
   tepe.sort((a, b) => b.v - a.v);
+  kenar.trTepe = tepe;
+  }
   const L = tepe.slice(0, enCok || 20);
+  // V4.6: kadraja taşan kâğıt için görüntünün dört sınırı da doğru olarak eklenir (yalnız ayrı değerlendirmede)
+  if (sinirli) L.push({ t: 0, r: 0, v: 0, s: 1 }, { t: 0, r: w - 1, v: 0, s: 1 }, { t: 90, r: 0, v: 0, s: 1 }, { t: 90, r: h - 1, v: 0, s: 1 });
   const kes = (a, b) => {
     const d = cs[a.t] * sn[b.t] - sn[a.t] * cs[b.t]; if (Math.abs(d) < 1e-6) return null;
     return [(a.r * sn[b.t] - b.r * sn[a.t]) / d, (b.r * cs[a.t] - a.r * cs[b.t]) / d];
@@ -16766,6 +17004,7 @@ function trHoughAdaylari(kenar, w, h, enCok) {
   for (let i = 0; i < ciftler.length; i++) for (let j = i + 1; j < ciftler.length; j++) {
     const [a, b] = ciftler[i], [c, d] = ciftler[j];
     const f = aciFark(a, c); if (f < 55 || f > 125) continue;
+    if (sinirli && !(a.s || b.s || c.s || d.s)) continue;
     const k = [kes(a, c), kes(c, b), kes(b, d), kes(d, a)];
     if (k.some(p => !p || p[0] < -pay || p[1] < -pay || p[0] > w + pay || p[1] > h + pay)) continue;
     sonuc.push(k);
@@ -17087,12 +17326,23 @@ async function trIsle(sf) {
     if (benim !== sf.surum) return;
     let out = await trIsleCanvas(kc, sf.kose, sf.filtre);
     kc.width = kc.height = 0;
+    // V4.6: Ayarla (parlaklık/kontrast) ve çizimler (İşaretle, Temizleme) filtreden sonra basılır;
+    // Ayarla ekranı için bunlar uygulanmadan önceki hali de saklanır
+    const ayarVar = !!(sf.ayar && (sf.ayar.p || sf.ayar.k)), cizimVar = !!(sf.cizim && sf.cizim.length);
+    let taban = null;
+    if (ayarVar || cizimVar) {
+      taban = await trBlob(out, 0.85);
+      if (benim !== sf.surum) return;
+      const ocx = out.getContext('2d', { willReadFrequently: true });
+      if (ayarVar) { const im = ocx.getImageData(0, 0, out.width, out.height); trAyarVeri(im.data, sf.ayar); ocx.putImageData(im, 0, 0); }
+      if (cizimVar) trCizimCiz(ocx, sf.cizim, out.width, out.height);
+    }
     const blob = await trBlob(out, 0.85);
     const kucuk = trCanvas(110, Math.round(110 * out.height / out.width));
     kucuk.getContext('2d').drawImage(out, 0, 0, kucuk.width, kucuk.height);
     if (benim !== sf.surum) return;
     if (sf.sonucUrl) URL.revokeObjectURL(sf.sonucUrl);
-    sf.sonuc = blob; sf.sonucUrl = URL.createObjectURL(blob);
+    sf.sonuc = blob; sf.sonucUrl = URL.createObjectURL(blob); sf.taban = taban;
     sf.sw = out.width; sf.sh = out.height;
     sf.kucuk = kucuk.toDataURL('image/jpeg', 0.7);
     out.width = out.height = 0;
@@ -17210,6 +17460,7 @@ async function trCekCanli(oto) {
   const flas = document.querySelector('#trFlas'); if (flas) { flas.classList.remove('on'); void flas.offsetWidth; flas.classList.add('on'); }
   trDeklansorSesi();
   OTO.bekle = true; OTO.iz = OTO.sonIz || null; OTO.izBas = performance.now(); OTO.farkBas = 0; OTO.sabit = 0;
+  OTO.cekSayfaIz = OTO.sayfaIz || null;
   const yedek = OTO.kose ? OTO.kose.map(q => q.slice()) : null;
   const yerine = TR.yenile; TR.yenile = -1;
   if ((oto || TR.mod === 'hizli') && yerine < 0) {
@@ -17234,14 +17485,14 @@ const TR_ISCI = { isci: null, mesgul: false, no: 0, olmadi: false, bas: 0 };
 function trIsciKur() {
   if (TR_ISCI.isci || TR_ISCI.olmadi) return TR_ISCI.isci;
   try {
-    const fs = [trSirala, trAlan, trDisbukey, trBulanik, trCanny, trGenislet, trZarf, trEnBuyukDortgen, trKenarDestek, trAciOk, trBolgeAdaylari, trKenarBulGri, trKenarBulParlak, trHoughAdaylari];
+    const fs = [trSirala, trAlan, trDisbukey, trBulanik, trCanny, trGenislet, trZarf, trEnBuyukDortgen, trKenarDestek, trAciOk, trBolgeAdaylari, trKenarBulGri, trKenarBulParlak, trHoughAdaylari, trOrtanca, trTasanDegerlendir, trKenarFarki, trKagitIcMi, trTasanBul, trSayfaIz];
     const kod = "'use strict';const TR_SINIR_ESIK=" + TR_SINIR_ESIK + ",TR_KONTRAST_ESIK=" + TR_KONTRAST_ESIK + ";\n" + fs.map(f => f.toString()).join('\n') +
       "\nonmessage=function(e){var d=e.data,p=new Uint8ClampedArray(d.rgba),n=d.w*d.h,g=new Float32Array(n);" +
       "for(var i=0,j=0;i<n;i++,j+=4)g[i]=p[j]*0.299+p[j+1]*0.587+p[j+2]*0.114;" +
-      "var k=null;try{k=trKenarBulGri(g,d.w,d.h,d.onceki,true);}catch(h){}postMessage({no:d.no,k:k});};";
+      "var k=null,iz=null;try{k=trKenarBulGri(g,d.w,d.h,d.onceki,true);if(k)iz=trSayfaIz(g,d.w,d.h,k);}catch(h){}postMessage({no:d.no,k:k,iz:iz});};";
     const url = URL.createObjectURL(new Blob([kod], { type: 'text/javascript' }));
     const w = new Worker(url);
-    w.onmessage = e => { TR_ISCI.mesgul = false; TR.canliSure = performance.now() - TR_ISCI.bas; trCanliSonuc(e.data.k); };
+    w.onmessage = e => { TR_ISCI.mesgul = false; TR.canliSure = performance.now() - TR_ISCI.bas; trCanliSonuc(e.data.k, e.data.iz); };
     w.onerror = () => { TR_ISCI.olmadi = true; TR_ISCI.isci = null; TR_ISCI.mesgul = false; try { w.terminate(); } catch (h) { } trCanliDongu(); };
     TR_ISCI.isci = w;
   } catch (e) { TR_ISCI.olmadi = true; TR_ISCI.isci = null; }
@@ -17263,6 +17514,32 @@ function trKareAl(v) {
   return { im, w, h, iz };
 }
 function trIzFark(a, b) { let t = 0; for (let i = 0; i < 1024; i++) t += Math.abs(a[i] - b[i]); return t / 1024; }
+/* V4.6 EK: sayfanın kendi izi (çerçevenin içi 32×44 hücre). Benzer düzendeki iki sayfa bütün
+   görüntünün izinde ayırt edilmez; sayfanın içindeki yazı/şekil farkı burada çıkar */
+function trSayfaIz(g, w, h, k) {
+  const P = k.map(q => [q[0] * (w - 1), q[1] * (h - 1)]), iz = new Float32Array(32 * 44);
+  for (let j = 0; j < 44; j++) for (let i = 0; i < 32; i++) {
+    const u = (i + 0.5) / 32, v = (j + 0.5) / 44;
+    const ux = P[0][0] + (P[1][0] - P[0][0]) * u, uy = P[0][1] + (P[1][1] - P[0][1]) * u;
+    const ax = P[3][0] + (P[2][0] - P[3][0]) * u, ay = P[3][1] + (P[2][1] - P[3][1]) * u;
+    const x = Math.round(ux + (ax - ux) * v), y = Math.round(uy + (ay - uy) * v);
+    let t = 0, m = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      t += g[yy * w + xx]; m++;
+    }
+    iz[j * 32 + i] = m ? t / m : 0;
+  }
+  return iz;
+}
+/* iki sayfa izinde belirgin değişen hücre oranı (genel ışık farkı çıkarılır) */
+function trSayfaDegisen(a, b) {
+  let o = 0; for (let i = 0; i < a.length; i++) o += a[i] - b[i]; o /= a.length;
+  let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i] - o) > 30) n++;
+  return n / a.length;
+}
+/* izin belirgin değişen hücre oranı (yeni sayfa ya da geçen el, görüntünün yalnız bir bölümünde olsa da) */
+function trIzDegisen(a, b) { let n = 0; for (let i = 0; i < 1024; i++) if (Math.abs(a[i] - b[i]) > 28) n++; return n / 1024; }
 function trCanliDongu() {
   clearTimeout(TR.canliT);
   if (!trKutu || trKutu.hidden || TR.ekran !== 'kamera' || !TR.akis) return;
@@ -17283,12 +17560,12 @@ function trCanliDongu() {
   } else {
     const t0 = performance.now(), d = K.im.data, n = K.w * K.h, g = new Float32Array(n);
     for (let i = 0, j = 0; i < n; i++, j += 4) g[i] = d[j] * 0.299 + d[j + 1] * 0.587 + d[j + 2] * 0.114;
-    let k = null; try { k = trKenarBulGri(g, K.w, K.h, onceki, true); } catch (e) { k = null; }
+    let k = null, iz = null; try { k = trKenarBulGri(g, K.w, K.h, onceki, true); if (k) iz = trSayfaIz(g, K.w, K.h, k); } catch (e) { k = null; }
     TR.canliSure = performance.now() - t0;
-    trCanliSonuc(k);
+    trCanliSonuc(k, iz);
   }
 }
-function trCanliSonuc(k) {
+function trCanliSonuc(k, sayfaIz) {
   if (!trKutu || trKutu.hidden || TR.ekran !== 'kamera' || !TR.akis) return;
   const simdi = performance.now();
   if (k) TR.sonBulma = simdi; else if (!TR.sonBulma) TR.sonBulma = simdi;
@@ -17308,7 +17585,7 @@ function trCanliSonuc(k) {
   } else if (k) {
     OTO.aykiriBas = 0;
     const hareket = OTO.ham ? Math.max.apply(null, k.map((q, i) => Math.hypot(q[0] - OTO.ham[i][0], q[1] - OTO.ham[i][1]))) : 1;
-    OTO.ham = k; OTO.sonGorulme = simdi; OTO.kayip = 0;
+    OTO.ham = k; OTO.sonGorulme = simdi; OTO.kayip = 0; OTO.sayfaIz = sayfaIz || null;
     OTO.kose = OTO.kose ? OTO.kose.map((q, i) => [q[0] * 0.5 + k[i][0] * 0.5, q[1] * 0.5 + k[i][1] * 0.5]) : k;
     if (hareket < 0.028) { if (!OTO.sabit) OTO.sabit = simdi; } else OTO.sabit = 0;
   } else {
@@ -17321,14 +17598,23 @@ function trCanliSonuc(k) {
   // aynı sayfa ikinci kez çekilmesin: sayfa çerçeveden çıkana ya da görüntü belirgin değişene kadar beklenir
   // (çekilen sayfa işlenirken ana akış meşgul olabilir; o sırada bekleme bozulmaz)
   if (OTO.bekle && !OTO.cekiliyor) {
-    if (!OTO.sonGorulme || simdi - OTO.sonGorulme > 1500) OTO.bekle = false;
+    // V4.6 EK: Yüksek hızlı taramada sayfa çevrilince (el geçer, sayfa kısa süre kaybolur ya da
+    // görüntünün bir bölümü belirgin değişir) bekleme çabuk biter; benzer düzendeki sayfalar da yakalanır
+    const hz = TR.mod === 'hizli';
+    if (!OTO.sonGorulme || simdi - OTO.sonGorulme > (hz ? 1000 : 1500)) OTO.bekle = false;
     else if (OTO.sonIz) {
       // çekimden hemen sonraki kısa sürede görüntü oturana kadar kıyas izi tazelenir;
       // sonra görüntü bir süre belirgin değişik kalırsa (yeni sayfa) beklemeden çıkılır
-      if (simdi - (OTO.izBas || 0) < 700 || !OTO.iz) { OTO.iz = OTO.sonIz; OTO.farkBas = 0; }
-      else if (trIzFark(OTO.sonIz, OTO.iz) > 25) { if (!OTO.farkBas) OTO.farkBas = simdi; else if (simdi - OTO.farkBas > 300) OTO.bekle = false; }
+      if (simdi - (OTO.izBas || 0) < (hz ? 450 : 700) || !OTO.iz) { OTO.iz = OTO.sonIz; OTO.farkBas = 0; }
+      else if (trIzFark(OTO.sonIz, OTO.iz) > 25 || trIzDegisen(OTO.sonIz, OTO.iz) > 0.3 ||
+        (OTO.cekSayfaIz && OTO.sayfaIz && simdi - (OTO.sonGorulme || 0) < 200 && trSayfaDegisen(OTO.sayfaIz, OTO.cekSayfaIz) > 0.15)) {
+        if (!OTO.farkBas) OTO.farkBas = simdi; else if (simdi - OTO.farkBas > (hz ? 250 : 300)) OTO.bekle = false;
+      }
       else OTO.farkBas = 0;
     }
+    // V4.6: bekleme bitince (yeni sayfa) sabitlik baştan sayılır: eski sayfanın çerçevesiyle
+    // yeni sayfa çekilmesin (sayfa birden değişince yeni çerçeve kısa süre aykırı sayılıyordu)
+    if (!OTO.bekle) { OTO.sabit = 0; OTO.aykiriBas = 0; }
   }
   // sıradaki kare: işçide hemen; işçi yoksa işlemciyi boğmamak için biraz beklenir
   TR.canliT = setTimeout(trCanliDongu, TR_ISCI.isci ? 8 : Math.max(60, Math.min(300, (TR.canliSure || 0) * 0.8)));
@@ -17338,6 +17624,9 @@ function trCizimDongu() {
   TR.cizimId = 0;
   if (!trKutu || trKutu.hidden || TR.ekran !== 'kamera') { trCanliCiz(null); trHalka(0); trOrtaMesaj(''); return; }
   TR.cizimId = requestAnimationFrame(trCizimDongu);
+  // V4.8: video sahneyi piksel ölçüsüyle kaplar (iPhone'da yüzde ölçü tutmuyor, görüntü sol üstte küçük kalıyordu)
+  const vid = trKutu.querySelector('#trVideo'), vs = vid && vid.parentElement;
+  if (vs) { const sw = vs.clientWidth, sh = vs.clientHeight; if (sw && sh && (vid.trW !== sw || vid.trH !== sh)) { vid.style.width = sw + 'px'; vid.style.height = sh + 'px'; vid.trW = sw; vid.trH = sh; } }
   const h = OTO.kose;
   if (h && TR.akis) OTO.goster = OTO.goster ? OTO.goster.map((q, i) => [q[0] + (h[i][0] - q[0]) * 0.32, q[1] + (h[i][1] - q[1]) * 0.32]) : h.map(q => q.slice());
   else OTO.goster = null;
@@ -17360,8 +17649,12 @@ function trCanliCiz(kose) {
   const pol = trKutu && trKutu.querySelector('#trCanliCokgen'); if (!pol) return;
   const v = trKutu.querySelector('#trVideo'), sahne = v.parentElement;
   if (!kose || !v.videoWidth) { if (pol.getAttribute('points')) { pol.setAttribute('points', ''); pol.classList.remove('on'); } return; }
-  const r = sahne.getBoundingClientRect(), o = Math.min(r.width / v.videoWidth, r.height / v.videoHeight);
-  const w = v.videoWidth * o, hh = v.videoHeight * o, x0 = (r.width - w) / 2, y0 = (r.height - hh) / 2;
+  // V4.6 EK: çerçeve, videonun ekranda gerçekten durduğu kutuya göre çizilir (iPhone'da video sahneyi
+  // doldurmadığında çerçeve kayık ve büyük çiziliyordu)
+  const sv = pol.ownerSVGElement || sahne, r = sv.getBoundingClientRect(), vr = v.getBoundingClientRect();
+  const o = Math.min(vr.width / v.videoWidth, vr.height / v.videoHeight);
+  const w = v.videoWidth * o, hh = v.videoHeight * o;
+  const x0 = vr.left - r.left + (vr.width - w) / 2, y0 = vr.top - r.top + (vr.height - hh) / 2;
   pol.setAttribute('points', kose.map(q => (x0 + q[0] * w).toFixed(1) + ',' + (y0 + q[1] * hh).toFixed(1)).join(' '));
   pol.classList.add('on');
 }
@@ -17418,11 +17711,10 @@ async function trDosyalar(liste) {
 
 /* ---------------- PDF ---------------- */
 async function trPdfYap() {
-  const A4W = 595.2, A4H = 841.68;
   const pdf = await PDFLib.PDFDocument.create();
   for (const sf of TR.sayfalar) {
     const im = await pdf.embedJpg(new Uint8Array(await sf.sonuc.arrayBuffer()));
-    const yatay = sf.sw > sf.sh, PW = yatay ? A4H : A4W, PH = yatay ? A4W : A4H;
+    const [PW, PH] = trSayfaBoyu(sf);
     const s = Math.min(PW / sf.sw, PH / sf.sh), w = sf.sw * s, h = sf.sh * s;
     const sayfa = pdf.addPage([PW, PH]);
     sayfa.drawImage(im, { x: (PW - w) / 2, y: (PH - h) / 2, width: w, height: h });
@@ -17477,8 +17769,14 @@ function trKur() {
   if (trKutu) return trKutu;
   const k = trEl('div', '', null); k.id = 'trKutu'; k.hidden = true;
   k.innerHTML =
-    '<div class="tr-ust"><button type="button" class="tr-ik" id="trKapat" aria-label="Kapat">' + trSvg(TR_IK.kapat) + '</button>' +
+    '<div class="tr-ust" id="trUstAna"><button type="button" class="tr-ik" id="trKapat" aria-label="Kapat">' + trSvg(TR_IK.kapat) + '</button>' +
     '<div class="tr-baslik" id="trBaslik">Belge tara</div><div class="tr-sag" id="trSayac"></div></div>' +
+    // V4.6: araç açıkken üst çubuk (Adobe Scan gibi: kapat, başlık, geri al, yinele, uygula)
+    '<div class="tr-ust tr-aracust" id="trAracUst" hidden><button type="button" class="tr-ik" id="trAracVazgec" aria-label="Vazgeç">' + trSvg(TR_IK.kapat) + '</button>' +
+    '<div class="tr-baslik" id="trAracBaslik"></div>' +
+    '<button type="button" class="tr-ik" id="trGeri" aria-label="Geri al">' + trSvg(TR_IK.geri) + '</button>' +
+    '<button type="button" class="tr-ik" id="trIleri" aria-label="Yinele">' + trSvg(TR_IK.ileri) + '</button>' +
+    '<button type="button" class="tr-ik tr-uygula" id="trAracTamam" aria-label="Uygula">' + trSvg(TR_IK.tamam) + '</button></div>' +
     // kamera
     '<div class="tr-ekran" data-e="kamera"><div class="tr-sahne">' +
     '<video id="trVideo" playsinline muted autoplay></video><div id="trFlas"></div>' +
@@ -17497,10 +17795,11 @@ function trKur() {
     '<i class="tr-ck" data-k="0"></i><i class="tr-ck" data-k="1"></i><i class="tr-ck" data-k="2"></i><i class="tr-ck" data-k="3"></i>' +
     '<i class="tr-cs tr-cs-y" data-s="0"></i><i class="tr-cs tr-cs-d" data-s="1"></i><i class="tr-cs tr-cs-y" data-s="2"></i><i class="tr-cs tr-cs-d" data-s="3"></i></div>' +
     '<div class="tr-kirpkat" id="trKirpSahne"><img id="trKaynak" alt="">' +
-    '<svg id="trCizgi"><polygon id="trCokgen"/></svg>' +
+    '<svg id="trCizgi"><path id="trKarart" fill-rule="evenodd"/><polygon id="trCokgen"/></svg>' +
     '<div class="tr-kenar" data-s="0"></div><div class="tr-kenar" data-s="1"></div><div class="tr-kenar" data-s="2"></div><div class="tr-kenar" data-s="3"></div>' +
     '<div class="tr-tutamak" data-i="0"></div><div class="tr-tutamak" data-i="1"></div><div class="tr-tutamak" data-i="2"></div><div class="tr-tutamak" data-i="3"></div>' +
     '<canvas id="trBuyutec" width="240" height="240" hidden></canvas></div>' +
+    '<canvas id="trCizim" width="1" height="1" hidden></canvas><div id="trFirca" hidden></div>' +
     '<div class="tr-bekle" id="trBekle"><i></i></div></div>' +
     '<div class="tr-kirpsatir" id="trKirpSatir" hidden>' +
     '<button type="button" id="trOto">' + trSvg('<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><circle cx="12" cy="12" r="2.4"/>') + '<span>Otomatik bul</span></button>' +
@@ -17510,11 +17809,33 @@ function trKur() {
     '<button type="button" class="tr-sayfapil" id="trSayfaDug"><span id="trSayfaYazi">Sayfa 1/1</span>' + trSvg('<path d="M7 14.5l5-5 5 5"/>') + '</button>' +
     '<button type="button" class="tr-navok" id="trSonraki" aria-label="Sonraki sayfa">' + trSvg('<path d="M9.5 5.5L16 12l-6.5 6.5"/>') + '</button></div>' +
     '<div class="tr-serit" id="trSerit" hidden></div>' +
-    '<div class="tr-filtre" id="trFiltre">' + TR_FILTRE.map(f => '<button type="button" data-f="' + f[0] + '">' + f[1] + '</button>').join('') + '</div>' +
-    '<div class="tr-arac">' +
+    // V4.6: araç panelleri (yalnız ilgili araç açıkken görünür)
+    '<div class="tr-panel" id="trPanel" hidden>' +
+    '<div class="tr-filtre" id="trFiltre" data-p="filtre">' + TR_FILTRE.map(f => '<button type="button" data-f="' + f[0] + '"><span class="tr-fk"></span><b>' + f[1] + '</b></button>').join('') + '</div>' +
+    '<div data-p="ayarla"><div class="tr-kayar"><span>Parlaklık</span><input type="range" class="tr-kaydir" id="trParlak" min="-100" max="100" step="1" value="0"><b id="trParlakD">0</b></div>' +
+    '<div class="tr-kayar"><span>Kontrast</span><input type="range" class="tr-kaydir" id="trKontrast" min="-100" max="100" step="1" value="0"><b id="trKontrastD">0</b></div></div>' +
+    '<div data-p="isaretle"><div class="tr-pb">Renk</div><div class="tr-renkler" id="trKalemRenk">' +
+    TR_KALEM_RENK.map((r, i) => '<button type="button" data-r="' + i + '" aria-label="' + r[2] + '"><i style="background:rgb(' + r[0].join(',') + ')' + (r[1] < 1 ? ';opacity:.75' : '') + '"></i></button>').join('') + '</div>' +
+    '<div class="tr-pb">Kalınlık</div><input type="range" class="tr-kaydir" id="trKalemBoy" min="1" max="100" step="1" value="25"></div>' +
+    '<div data-p="temizle"><div class="tr-pb">Renk Değiştirme</div>' +
+    '<button type="button" class="tr-radyo" data-r="cevre"><i></i><span>Çevreleyen renkle doldur</span></button>' +
+    '<div class="tr-radyosatir"><button type="button" class="tr-radyo" data-r="secilen"><i></i><span>Seçilen renkle doldur</span></button>' +
+    '<button type="button" class="tr-renkkutu" id="trSecRenk" aria-label="Renk seç"></button>' +
+    '<button type="button" class="tr-ik tr-damla" id="trDamla" aria-label="Sayfadan renk al">' + trSvg(TR_IK.damla) + '</button>' +
+    '<input type="color" id="trRenkGir" class="tr-gizli" tabindex="-1" aria-hidden="true"></div>' +
+    '<div class="tr-pb">Boyut</div><input type="range" class="tr-kaydir" id="trSilBoy" min="1" max="100" step="1" value="30"></div>' +
+    '<div data-p="boyut"><div class="tr-pb">Sayfa boyutu</div><div class="tr-cipler" id="trBoyutlar">' +
+    TR_BOYUTLAR.map(b => '<button type="button" data-b="' + b[0] + '">' + b[1] + '</button>').join('') + '</div></div>' +
+    '</div>' +
+    '<div class="tr-arac" id="trAracSerit">' +
     '<button type="button" id="trYeniden">' + trSvg(TR_IK.yeniden) + '<span>Yeniden çek</span></button>' +
     '<button type="button" id="trKirp">' + trSvg(TR_IK.kirp) + '<span>Kırp</span></button>' +
     '<button type="button" id="trDondur">' + trSvg(TR_IK.dondur) + '<span>Döndür</span></button>' +
+    '<button type="button" id="trFiltreler" data-a="filtre">' + trSvg(TR_IK.filtreler) + '<span>Filtreler</span></button>' +
+    '<button type="button" id="trAyarla" data-a="ayarla">' + trSvg(TR_IK.ayarla) + '<span>Ayarla</span></button>' +
+    '<button type="button" id="trIsaretle" data-a="isaretle">' + trSvg(TR_IK.isaretle) + '<span>İşaretle</span></button>' +
+    '<button type="button" id="trTemizleme" data-a="temizle">' + trSvg(TR_IK.temizle) + '<span>Temizleme</span></button>' +
+    '<button type="button" id="trBoyutlandir" data-a="boyut">' + trSvg(TR_IK.boyutlandir) + '<span>Yeniden Boyutlandır</span></button>' +
     '<button type="button" id="trSil">' + trSvg(TR_IK.sil) + '<span>Sil</span></button></div>' +
     '<div class="tr-dalt"><button type="button" class="tr-ikincil" id="trDevam">Taramaya devam et</button>' +
     '<button type="button" class="tr-birincil" id="trKaydet">PDF\'yi kaydet</button></div></div>' +
@@ -17557,6 +17878,7 @@ function trKur() {
   $k('#trKirp').addEventListener('click', () => { if (TR.kirp) trKirpBitir(true); else if (TR.sayfalar[TR.aktif]) trKirpAc(); });
   $k('#trDondur').addEventListener('click', () => { if (TR.kirp) trKirpBitir(true); trDondur(); });
   $k('#trSil').addEventListener('click', () => { if (TR.kirp) trKirpBitir(false); trSayfaSil(TR.aktif); });
+  trAracBagla($k);
   $k('#trDevam').addEventListener('click', () => {
     if (TR.sayfalar.length >= TR.EN_COK) { trMesaj('En çok ' + TR.EN_COK + ' sayfa taranabilir.'); return; }
     if (TR.kirp) trKirpBitir(true);
@@ -17570,7 +17892,7 @@ function trKur() {
   $k('#trOnceki').addEventListener('click', () => trSayfaGec(-1));
   $k('#trSonraki').addEventListener('click', () => trSayfaGec(1));
   $k('#trSayfaDug').addEventListener('click', () => { TR.seritAcik = !TR.seritAcik; trBoya(); });
-  $k('#trSonuc').addEventListener('load', () => trCerceveYerlestir());
+  $k('#trSonuc').addEventListener('load', () => { trCerceveYerlestir(); if (TR.kirp && TR.kirp.yerinde) trKirpYerindeG(); });
   // sonuç sayfasındaki çerçeve tutamağına dokununca kırpmaya geçilir, sürükleme kesilmeden sürer
   $k('#trCerceve').addEventListener('pointerdown', e => {
     const t = e.target.closest('.tr-ck, .tr-cs'); if (!t || !TR.sayfalar[TR.aktif]) return;
@@ -17582,7 +17904,7 @@ function trKur() {
   (() => {
     let b = null;
     const sahne = $k('#trDuzenSahne');
-    sahne.addEventListener('pointerdown', e => { if (TR.kirp || e.target.closest('.tr-ck, .tr-cs')) return; b = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
+    sahne.addEventListener('pointerdown', e => { if (TR.kirp || TR.arac || e.target.closest('.tr-ck, .tr-cs')) return; b = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
     sahne.addEventListener('pointerup', e => {
       if (!b || e.pointerId !== b.id) return;
       const dx = e.clientX - b.x, dy = e.clientY - b.y; b = null;
@@ -17594,9 +17916,14 @@ function trKur() {
   $k('#trOto').addEventListener('click', async () => {
     const sf = TR.sayfalar[TR.aktif]; if (!sf || !TR.kirp) return;
     const kc = await trKaynakCanvas(sf); let b = trKenarBul(kc); if (b) b = trKoseIncelt(kc, b); kc.width = kc.height = 0;
-    if (b && TR.kirp) { TR.kirp.kose = b; trGorunumAnim(trKirpHedef(false), 260); } else if (!b) trMesaj('Kenarlar bulunamadı; köşeleri elle yerleştirin.');
+    if (b && TR.kirp && TR.kirp.yerinde) trKirpKaynakUygula(sf, b);
+    else if (b && TR.kirp) { TR.kirp.kose = b; trGorunumAnim(trKirpHedef(false), 260); } else if (!b) trMesaj('Kenarlar bulunamadı; köşeleri elle yerleştirin.');
   });
-  $k('#trTum').addEventListener('click', () => { if (TR.kirp) { TR.kirp.kose = trTamKose(0); trGorunumAnim(trKirpHedef(false), 260); } });
+  $k('#trTum').addEventListener('click', () => {
+    const sf = TR.sayfalar[TR.aktif];
+    if (TR.kirp && TR.kirp.yerinde) { if (sf) trKirpKaynakUygula(sf, trTamKose(0)); }
+    else if (TR.kirp) { TR.kirp.kose = trTamKose(0); trGorunumAnim(trKirpHedef(false), 260); }
+  });
   $k('#trKirpTamam').addEventListener('click', () => trKirpBitir(true));
   trTutamakBagla();
 
@@ -17608,7 +17935,7 @@ function trKur() {
   $k('#trSorHayir').addEventListener('click', () => { $k('#trSor').hidden = true; });
   $k('#trSorEvet').addEventListener('click', () => { $k('#trSor').hidden = true; trKapat(true); });
 
-  window.addEventListener('resize', () => { if (TR.kirp && TR.kirpG) trGorunumUygula(trKirpHedef(false)); if (TR.ekran === 'duzen') trCerceveYerlestir(); });
+  window.addEventListener('resize', () => { if (TR.kirp && TR.kirp.yerinde) trKirpYerindeG(); else if (TR.kirp && TR.kirpG) trGorunumUygula(trKirpHedef(false)); if (TR.ekran === 'duzen') trCerceveYerlestir(); if (TR.arac) trAracYerlestir(); });
   // telefon arka plana alınıp dönünce kamera kapanmış olabilir: yeniden açılır
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && trKutu && !trKutu.hidden && TR.ekran === 'kamera' && TR.akis && !trAkisCanli()) trKameraEkrani();
@@ -17619,6 +17946,7 @@ function trKur() {
     if (e.key === 'Escape') {
       e.preventDefault();
       if (!$k('#trSor').hidden) $k('#trSor').hidden = true;
+      else if (TR.arac) trAracKapat(false);
       else if (TR.kirp) trKirpBitir(false);
       else trKapat(false);
     }
@@ -17695,7 +18023,8 @@ function trBoya() {
       (p.hazir ? '' : '<i></i>') + '</span><b>' + (i + 1) + '</b></div>').join('');
     if (s.dataset.son !== html) { s.innerHTML = html; s.dataset.son = html; const a = s.querySelector('.sec'); if (a && a.scrollIntoView) a.scrollIntoView({ block: 'nearest', inline: 'center' }); }
     $k('#trKaydet').disabled = !n;
-    $k('#trYeniden').disabled = $k('#trKirp').disabled = $k('#trDondur').disabled = $k('#trSil').disabled = !sf;
+    for (const b of $k('#trAracSerit').children) b.disabled = !sf;
+    trAracBoya($k);
   }
 }
 
@@ -17717,6 +18046,8 @@ async function trDondurIc(sf) {
   c.width = c.height = 0;
   // saat yönünde 90°: (x, y) -> (1 - y, x)
   sf.kose = trSirala(sf.kose.map(q => [1 - q[1], q[0]]));
+  // V4.6: işaret/temizleme çizimleri sayfayla birlikte döner
+  if (sf.cizim) for (const c of sf.cizim) { const n = c.n; for (let i = 0; i < n.length; i += 2) { const x = n[i]; n[i] = 1 - n[i + 1]; n[i + 1] = x; } }
   TR.sonPdf = null;
   await trIsle(sf);
 }
@@ -17764,9 +18095,46 @@ function trKaynakOnYukle(sf) {
    görünüm kendiliğinden biraz uzaklaşır (sayfanın dışı da görünür), bırakınca yeniden
    yeni çerçeveye oturur. Tamam / Kırp ya da başka bir işlem kırpmayı uygular. */
 const trSahneEl = () => trKutu.querySelector('#trDuzenSahne');
+const TR_KIRP_YERINDE = true;
+/* sayfa üstünde kırpma: ekrandaki sayfa resminin kutusu (köşeler sayfanın kendi 0..1 düzleminde) */
+/* sayfa üstünde kırpmada Otomatik bul / Tüm fotoğraf: kaynak dörtgen hemen uygulanır, yeni sayfa
+   gelince çerçeve sayfanın kenarlarına oturur, kırpma sürer */
+function trKirpKaynakUygula(sf, kose) {
+  sf.kose = trSirala(kose); sf.otomatik = false; TR.sonPdf = null;
+  TR.kirp.kose = trTamKose(0); TR.kirp.bekliyor = true; trKirpCiz();
+  trIsle(sf).then(() => { if (TR.kirp && TR.kirp.yerinde) { TR.kirp.bekliyor = false; trBoya(); } });
+}
+function trKirpYerindeG() {
+  const img = trKutu.querySelector('#trSonuc'), sahne = trSahneEl();
+  if (img.hidden || !img.naturalWidth) return false;
+  const sr = sahne.getBoundingClientRect(), ir = img.getBoundingClientRect();
+  if (!ir.width || !ir.height) return false;
+  TR.kirpG = { s: ir.width / img.naturalWidth, ox: ir.left - sr.left, oy: ir.top - sr.top, nw: img.naturalWidth, nh: img.naturalHeight, yerinde: true };
+  trKirpCiz();
+  return true;
+}
+/* birim karedeki (u, v) noktasını sayfanın kaynak fotoğraftaki dörtgenine götürür (perspektif) */
+function trKareDortgen(k, u, v) {
+  const x0 = k[0][0], y0 = k[0][1], x1 = k[1][0], y1 = k[1][1], x2 = k[2][0], y2 = k[2][1], x3 = k[3][0], y3 = k[3][1];
+  const dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2, sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
+  let g = 0, hh = 0;
+  if (Math.abs(sx) > 1e-12 || Math.abs(sy) > 1e-12) { const d = dx1 * dy2 - dx2 * dy1; if (Math.abs(d) > 1e-12) { g = (sx * dy2 - dx2 * sy) / d; hh = (dx1 * sy - sx * dy1) / d; } }
+  const a = x1 - x0 + g * x1, b = x3 - x0 + hh * x3, d2 = y1 - y0 + g * y1, e = y3 - y0 + hh * y3, w = g * u + hh * v + 1;
+  return [(a * u + b * v + x0) / w, (d2 * u + e * v + y0) / w];
+}
 async function trKirpAc(bas) {
   const sf = TR.sayfalar[TR.aktif]; if (!sf || !sf.hazir) return;
   if (TR.kirp) { if (bas && bas.e) trSurukleBasla(bas.e, bas.tip, bas.i); return; }
+  // V4.8: kenarlar taranmış (düzleşmiş) sayfanın üstünde ayarlanır; görünüm geri gitmez, büyüyüp küçülmez
+  if (TR_KIRP_YERINDE) {
+    TR.kirp = { yerinde: true, kose: trTamKose(0) };
+    if (!trKirpYerindeG()) { TR.kirp = null; return; }
+    trSahneEl().classList.add('kirpta', 'yerinde');
+    trBoya();
+    trKirpYerindeG();   // kırpma satırı açılınca sayfa biraz kayar: çerçeve yeniden oturur
+    if (bas && bas.e) trSurukleBasla(bas.e, bas.tip, bas.i);
+    return;
+  }
   TR.kirp = { kose: sf.kose.map(q => q.slice()) };
   const o = trKaynakOnYukle(sf);
   if (!o.hazir) await o.soz;
@@ -17786,7 +18154,8 @@ function trKirpBitir(uygula) {
   TR.kirp = null; TR.surukle = null; trBuyutec(null); cancelAnimationFrame(TR.gorAnim || 0);
   let degisti = false;
   if (uygula && sf) {
-    const k4 = trSirala(k.kose);
+    const ham = k.yerinde ? k.kose.map(p => trKareDortgen(sf.kose, p[0], p[1]).map(v => Math.min(1, Math.max(0, v)))) : k.kose;
+    const k4 = trSirala(ham);
     if (trDisbukey(k4) && trAlan(k4) >= 0.01) {
       degisti = k4.some((p, i) => Math.hypot(p[0] - sf.kose[i][0], p[1] - sf.kose[i][1]) > 0.002);
       if (degisti) { sf.kose = k4; sf.otomatik = false; TR.sonPdf = null; }
@@ -17799,9 +18168,9 @@ function trKirpBitir(uygula) {
       trBoya();
       const img = trKutu.querySelector('#trSonuc');
       try { if (img.decode) await img.decode(); } catch (e) { }
-      sahne.classList.remove('kirpta', 'kirp-cikis'); trCerceveYerlestir();
+      sahne.classList.remove('kirpta', 'kirp-cikis', 'yerinde'); trCerceveYerlestir();
     });
-  } else sahne.classList.remove('kirpta', 'kirp-cikis');
+  } else sahne.classList.remove('kirpta', 'kirp-cikis', 'yerinde');
   trBoya();
 }
 /* görünüm: genis=false → sayfaya yakın (sayfa ekranı doldurur); genis=true → biraz uzak */
@@ -17841,6 +18210,10 @@ function trKirpCiz() {
   if (!TR.kirp || !trKutu || !TR.kirpG) return;
   const nokta = TR.kirp.kose.map(trKirpNokta);
   trKutu.querySelector('#trCokgen').setAttribute('points', nokta.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '));
+  // V4.8: sayfa üstünde kırpmada çerçevenin dışında kalan (kesilecek) yer karartılır
+  const kr = trKutu.querySelector('#trKarart');
+  if (TR.kirp.yerinde) { const sh = trSahneEl(); kr.setAttribute('d', 'M-5 -5H' + (sh.clientWidth + 5) + 'V' + (sh.clientHeight + 5) + 'H-5Z M' + nokta.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L') + 'Z'); }
+  else kr.setAttribute('d', '');
   for (const t of trKutu.querySelectorAll('.tr-tutamak')) { const p = nokta[+t.dataset.i]; t.style.left = p[0] + 'px'; t.style.top = p[1] + 'px'; }
   for (const t of trKutu.querySelectorAll('.tr-kenar')) {
     const i = +t.dataset.s, a = nokta[i], b = nokta[(i + 1) % 4];
@@ -17855,12 +18228,13 @@ function trSurukleBasla(e, tip, i) {
   const el = tip === 'kose' ? trKutu.querySelectorAll('.tr-tutamak')[i] : trKutu.querySelectorAll('.tr-kenar')[i];
   if (el) el.classList.add('tut');
   // sürüklerken görünüm biraz uzaklaşır: sayfanın dışı da görünür, kenar dışarı çekilebilir
-  trGorunumAnim(trKirpHedef(true), 220);
+  // (V4.8: sayfa üstünde kırpmada görünüm hiç değişmez)
+  if (!TR.kirp.yerinde) trGorunumAnim(trKirpHedef(true), 220);
   if (tip === 'kose') trBuyutec(i);
 }
 /* büyüteç: sürüklenen köşenin çevresi büyütülerek parmağın üstünde gösterilir */
 function trBuyutec(i) {
-  const c = trKutu.querySelector('#trBuyutec'), img = trKutu.querySelector('#trKaynak');
+  const c = trKutu.querySelector('#trBuyutec'), img = trKutu.querySelector(TR.kirp && TR.kirp.yerinde ? '#trSonuc' : '#trKaynak');
   if (i == null || !TR.kirp || !TR.kirpG || !img.naturalWidth) { c.hidden = true; return; }
   const G = TR.kirpG, q = TR.kirp.kose[i], p = trKirpNokta(q), sahne = trSahneEl();
   const BOY = 116, Z = 2.4, yari = BOY / 2 / (G.s * Z);
@@ -17881,8 +18255,12 @@ function trBuyutec(i) {
 function trTutamakBagla() {
   const kat = trKutu.querySelector('#trKirpSahne');
   const sinirla = v => Math.min(1, Math.max(0, v));
+  // sayfa üstünde kırpmada köşe sayfanın biraz dışına da çekilebilir (otomatik kesim kâğıdı biraz kestiyse);
+  // tutamak ekranın içinde kalır
+  const sinX = v => { const G = TR.kirpG; if (!TR.kirp || !TR.kirp.yerinde || !G) return sinirla(v); const W = G.nw * G.s, sw = trSahneEl().clientWidth; return Math.min(Math.min(1.1, (sw - 8 - G.ox) / W), Math.max(Math.max(-0.1, (8 - G.ox) / W), v)); };
+  const sinY = v => { const G = TR.kirpG; if (!TR.kirp || !TR.kirp.yerinde || !G) return sinirla(v); const H = G.nh * G.s, sh = trSahneEl().clientHeight; return Math.min(Math.min(1.1, (sh - 8 - G.oy) / H), Math.max(Math.max(-0.1, (8 - G.oy) / H), v)); };
   kat.addEventListener('pointerdown', e => {
-    if (!TR.kirp || !TR.kirpG) return;
+    if (!TR.kirp || !TR.kirpG || TR.kirp.bekliyor) return;
     const sr = kat.getBoundingClientRect(), px = e.clientX - sr.left, py = e.clientY - sr.top;
     // en yakın tutamak (köşeler öncelikli; parmakla tutmayı kolaylaştırmak için geniş alan)
     const nokta = TR.kirp.kose.map(trKirpNokta);
@@ -17901,19 +18279,19 @@ function trTutamakBagla() {
     const G = TR.kirpG, dx = (e.clientX - S.sx) / (G.nw * G.s), dy = (e.clientY - S.sy) / (G.nh * G.s);
     S.sx = e.clientX; S.sy = e.clientY;
     const k = TR.kirp.kose.map(q => q.slice());
-    if (S.tip === 'kose') k[S.i] = [sinirla(k[S.i][0] + dx), sinirla(k[S.i][1] + dy)];
+    if (S.tip === 'kose') k[S.i] = [sinX(k[S.i][0] + dx), sinY(k[S.i][1] + dy)];
     else {
       // kenar: iki ucu birlikte, kenara dik yönde kayar
       const a = S.i, b = (S.i + 1) % 4;
       const ax = (k[b][0] - k[a][0]) * G.nw, ay = (k[b][1] - k[a][1]) * G.nh, L = Math.hypot(ax, ay) || 1;
       const nx = -ay / L, ny = ax / L, d = dx * G.nw * nx + dy * G.nh * ny;
       const mx = nx * d / G.nw, my = ny * d / G.nh;
-      k[a] = [sinirla(k[a][0] + mx), sinirla(k[a][1] + my)]; k[b] = [sinirla(k[b][0] + mx), sinirla(k[b][1] + my)];
+      k[a] = [sinX(k[a][0] + mx), sinY(k[a][1] + my)]; k[b] = [sinX(k[b][0] + mx), sinY(k[b][1] + my)];
     }
     TR.kirp.kose = k; trKirpCiz();
     if (S.tip === 'kose') trBuyutec(S.i);
     // tutamak ekranın kenarına yaklaştıysa görünüm biraz daha uzaklaşır
-    if (!TR.gorAnimVar) {
+    if (!TR.gorAnimVar && !TR.kirp.yerinde) {
       const sahne = trSahneEl(), W = sahne.clientWidth, H = sahne.clientHeight;
       const pts = S.tip === 'kose' ? [trKirpNokta(k[S.i])] : [trKirpNokta(k[S.i]), trKirpNokta(k[(S.i + 1) % 4])];
       if (pts.some(p => p[0] < 26 || p[1] < 26 || p[0] > W - 26 || p[1] > H - 26)) {
@@ -17926,16 +18304,306 @@ function trTutamakBagla() {
     for (const t of trKutu.querySelectorAll('.tr-tutamak.tut, .tr-kenar.tut')) t.classList.remove('tut');
     TR.surukle = null; trBuyutec(null);
     // bırakınca görünüm yeni çerçeveye yeniden oturur
-    if (TR.kirp) trGorunumAnim(trKirpHedef(false), 260);
+    if (TR.kirp && !TR.kirp.yerinde) trGorunumAnim(trKirpHedef(false), 260);
   };
   trKutu.addEventListener('pointerup', bitir);
   trKutu.addEventListener('pointercancel', bitir);
 }
 
 /* ---------------- aç / kapat ---------------- */
+/* ---------------- V4.6: sonuç ekranı araçları (Adobe Scan gibi) ----------------
+   Filtreler (küçük resimli), Ayarla (parlaklık/kontrast), İşaretle (kalem), Temizleme (silgi:
+   çevreleyen ya da seçilen renkle doldurur), Yeniden Boyutlandır (PDF sayfa boyu). Çizimler
+   sayfanın kendi (düzleştirilmiş) koordinatlarında saklanır, her işlemde yeniden basılır,
+   Döndür ile birlikte döner. Vazgeç (X) yapılanı bırakır, ✓ uygular. */
+const TR_BOYUTLAR = [['orijinal', 'Orijinal', 0, 0], ['a4', 'A4', 595.2, 841.68], ['a5', 'A5', 419.53, 595.28], ['a3', 'A3', 841.89, 1190.55],
+  ['letter', 'Letter', 612, 792], ['legal', 'Legal', 612, 1008], ['kart', 'Kartvizit', 155.91, 240.94]];
+const TR_KALEM_RENK = [[[17, 17, 17], 1, 'Siyah'], [[29, 78, 216], 1, 'Mavi'], [[220, 38, 38], 1, 'Kırmızı'], [[22, 163, 74], 1, 'Yeşil'], [[250, 204, 21], 0.4, 'Fosforlu sarı']];
+const TR_ARAC_AD = { filtre: 'Filtreler', ayarla: 'Ayarla', isaretle: 'İşaretle', temizle: 'Temizleme', boyut: 'Yeniden Boyutlandır' };
+const TR_FIRCA = { kalemRenk: 0, kalemBoy: 25, silBoy: 30, silTur: 'cevre', silRenk: [255, 255, 255] };
+
+/* PDF sayfa boyu (punto): yatay sayfada en/boy yer değiştirir; Orijinal = sayfanın kendi oranı */
+function trSayfaBoyu(sf) {
+  const b = TR_BOYUTLAR.find(x => x[0] === (sf.boyut || 'a4')) || TR_BOYUTLAR[1];
+  if (!b[2]) { const s = 841.68 / Math.max(sf.sw, sf.sh); return [sf.sw * s, sf.sh * s]; }
+  return sf.sw > sf.sh ? [b[3], b[2]] : [b[2], b[3]];
+}
+function trAyarVeri(d, ayar) {
+  if (!ayar || (!ayar.p && !ayar.k)) return;
+  const b = 1 + ayar.p / 200, c = 1 + ayar.k / 150, L = new Uint8ClampedArray(256);
+  for (let v = 0; v < 256; v++) L[v] = Math.round((Math.min(255, v * b) / 255 - 0.5) * c * 255 + 127.5);
+  for (let i = 0; i < d.length; i += 4) { d[i] = L[d[i]]; d[i + 1] = L[d[i + 1]]; d[i + 2] = L[d[i + 2]]; }
+}
+/* çizim: { r: [r,g,b], a: saydamlık, k: kalınlık (sayfanın kısa kenarına oranı), n: [x0,y0,x1,y1…] (0..1) } */
+function trCizimCiz(cx, liste, W, H) {
+  const m = Math.min(W, H);
+  for (const c of liste) {
+    const P = c.n; if (!P || P.length < 2) continue;
+    cx.save();
+    cx.globalAlpha = c.a || 1;
+    cx.strokeStyle = cx.fillStyle = 'rgb(' + c.r[0] + ',' + c.r[1] + ',' + c.r[2] + ')';
+    cx.lineCap = cx.lineJoin = 'round'; cx.lineWidth = Math.max(1, c.k * m);
+    cx.beginPath();
+    if (P.length === 2) { cx.arc(P[0] * W, P[1] * H, cx.lineWidth / 2, 0, Math.PI * 2); cx.fill(); }
+    else { cx.moveTo(P[0] * W, P[1] * H); for (let i = 2; i < P.length; i += 2) cx.lineTo(P[i] * W, P[i + 1] * H); cx.stroke(); }
+    cx.restore();
+  }
+}
+/* silginin geçtiği yolun hemen dışındaki halkadan renk (kanal kanal ortanca): yazı/leke silinir,
+   kâğıdın kendi rengiyle doldurulur */
+function trCevreRenk(veri, n, yaricap) {
+  const W = veri.width, H = veri.height, d = veri.data, R = [], G = [], B = [];
+  const adim = Math.max(1, Math.floor(n.length / 2 / 50)) * 2, P = [];
+  for (let i = 0; i < n.length; i += adim) P.push([n[i] * W, n[i + 1] * H]);
+  if (n.length >= 2) P.push([n[n.length - 2] * W, n[n.length - 1] * H]);
+  const r2 = yaricap * yaricap;
+  for (const [x0, y0] of P) for (const ek of [3, 6, 10]) {
+    const r = yaricap + ek;
+    for (let a = 0; a < 16; a++) {
+      const x = Math.round(x0 + Math.cos(a * Math.PI / 8) * r), y = Math.round(y0 + Math.sin(a * Math.PI / 8) * r);
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      let icinde = false; for (const q of P) { const dx = x - q[0], dy = y - q[1]; if (dx * dx + dy * dy < r2) { icinde = true; break; } }
+      if (icinde) continue;
+      const j = (y * W + x) * 4; R.push(d[j]); G.push(d[j + 1]); B.push(d[j + 2]);
+    }
+  }
+  if (!R.length) return [255, 255, 255];
+  return [trOrtanca(R), trOrtanca(G), trOrtanca(B)];
+}
+/* filtre küçük resimleri: kaynaktan küçük boyda düzleştirilip her filtre uygulanır */
+async function trFiltreKucukler(sf) {
+  const anahtar = sf.kaynak.size + ':' + sf.kw + 'x' + sf.kh + ':' + sf.kose.map(q => q[0].toFixed(3) + ',' + q[1].toFixed(3)).join(';');
+  if (sf.fk && sf.fk.anahtar === anahtar) return sf.fk.url;
+  const im = await trResim(sf.kaynak);
+  const o = Math.min(1, 900 / Math.max(im.naturalWidth, im.naturalHeight));
+  const c = trCanvas(im.naturalWidth * o, im.naturalHeight * o), cx = c.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(im, 0, 0, c.width, c.height);
+  const src = cx.getImageData(0, 0, c.width, c.height).data;
+  const [W0, H0] = trCiktiBoyu(sf.kose, c.width, c.height), s = 260 / Math.max(W0, H0);
+  const W = Math.max(8, Math.round(W0 * s)), H = Math.max(8, Math.round(H0 * s));
+  const temel = new Uint8ClampedArray(W * H * 4); trDuzlestirVeri(src, c.width, c.height, sf.kose, W, H, temel);
+  const out = trCanvas(W, H), ocx = out.getContext('2d'), url = {};
+  for (const [f] of TR_FILTRE) {
+    const d = new Uint8ClampedArray(temel); trFiltreVeri(d, W, H, f);
+    ocx.putImageData(new ImageData(d, W, H), 0, 0); url[f] = out.toDataURL('image/jpeg', 0.8);
+    await trBekle(0);
+  }
+  c.width = c.height = 0; out.width = out.height = 0;
+  sf.fk = { anahtar, url };
+  return url;
+}
+
+async function trAracAc(tur) {
+  let sf = TR.sayfalar[TR.aktif]; if (!sf) return;
+  if (TR.kirp) trKirpBitir(true);
+  // kırpma/döndürme sonrası sayfa yeniden hazırlanıyorsa beklenir
+  for (let i = 0; i < 300 && TR.sayfalar[TR.aktif] === sf && !sf.hazir && !sf.hata; i++) await trBekle(50);
+  if (TR.sayfalar[TR.aktif] !== sf || !sf.hazir || TR.arac) return;
+  TR.seritAcik = false;
+  const A = TR.arac = {
+    tur, sf, cizim: [], ileri: [], im: null,
+    ilk: { filtre: sf.filtre, ayar: { p: (sf.ayar && sf.ayar.p) || 0, k: (sf.ayar && sf.ayar.k) || 0 }, boyut: sf.boyut || 'a4' }
+  };
+  A.ayar = { p: A.ilk.ayar.p, k: A.ilk.ayar.k }; A.boyut = A.ilk.boyut;
+  const $k = q => trKutu.querySelector(q);
+  if (tur === 'ayarla') { $k('#trParlak').value = A.ayar.p; $k('#trKontrast').value = A.ayar.k; }
+  if (tur === 'isaretle') $k('#trKalemBoy').value = TR_FIRCA.kalemBoy;
+  if (tur === 'temizle') $k('#trSilBoy').value = TR_FIRCA.silBoy;
+  trBoya();
+  if (tur === 'filtre') {
+    try {
+      const url = await trFiltreKucukler(sf);
+      if (TR.arac !== A) return;
+      for (const b of $k('#trFiltre').children) b.querySelector('.tr-fk').style.backgroundImage = 'url(' + url[b.dataset.f] + ')';
+    } catch (e) { }
+    return;
+  }
+  try { A.im = await trResim(tur === 'ayarla' ? (sf.taban || sf.sonuc) : sf.sonuc); } catch (e) { A.im = null; }
+  if (TR.arac !== A) return;
+  if (!A.im) { trAracKapat(false); trMesaj('Sayfa açılamadı.'); return; }
+  trAracYerlestir();
+  trBoya();
+}
+function trAracKapat(uygula) {
+  const A = TR.arac; if (!A) return;
+  TR.arac = null;
+  const sf = A.sf, var_ = TR.sayfalar.includes(sf);
+  let isle = false;
+  if (var_ && A.tur === 'filtre' && !uygula && sf.filtre !== A.ilk.filtre) { sf.filtre = TR.filtre = A.ilk.filtre; isle = true; }
+  if (var_ && uygula) {
+    if (A.tur === 'ayarla' && (A.ayar.p !== A.ilk.ayar.p || A.ayar.k !== A.ilk.ayar.k)) { sf.ayar = { p: A.ayar.p, k: A.ayar.k }; isle = true; }
+    if ((A.tur === 'isaretle' || A.tur === 'temizle') && A.cizim.length) { sf.cizim = (sf.cizim || []).concat(A.cizim); isle = true; }
+    if (A.tur === 'boyut' && A.boyut !== A.ilk.boyut) { sf.boyut = A.boyut; TR.sonPdf = null; }
+  }
+  const cv = trKutu.querySelector('#trCizim');
+  if (isle) {
+    TR.sonPdf = null;
+    // yeni sayfa hazırlanana kadar tuvaldeki (uygulanmış) görüntü ekranda kalır, gidip gelmez
+    TR.cizimTut = (A.tur === 'filtre' || !A.im) ? null : sf;
+    trIsle(sf).then(() => { if (TR.cizimTut === sf) { TR.cizimTut = null; if (!TR.arac) { cv.width = cv.height = 1; } trBoya(); } });
+  } else { cv.width = cv.height = 1; }
+  trKutu.querySelector('#trFirca').hidden = true;
+  trBoya();
+}
+/* tuvali sahnede sayfanın görüneceği yere oturtur (Yeniden Boyutlandır'da kâğıdın oranında) */
+function trAracYerlestir() {
+  const A = TR.arac; if (!A || !A.im || !trKutu) return;
+  const sahne = trKutu.querySelector('#trDuzenSahne'), cv = trKutu.querySelector('#trCizim');
+  const sw = sahne.clientWidth, sh = sahne.clientHeight, pay = 18;
+  let W = A.im.naturalWidth, H = A.im.naturalHeight;
+  if (A.tur === 'boyut') { const b = trSayfaBoyu({ boyut: A.boyut, sw: W, sh: H }); W = b[0]; H = b[1]; }
+  const s = Math.min((sw - 2 * pay) / W, (sh - 2 * pay) / H), cw = Math.max(10, W * s), ch = Math.max(10, H * s);
+  cv.style.left = ((sw - cw) / 2) + 'px'; cv.style.top = ((sh - ch) / 2) + 'px';
+  cv.style.width = cw + 'px'; cv.style.height = ch + 'px';
+  const dpr = Math.min(2.5, window.devicePixelRatio || 1), o = Math.min(1, 2000 / Math.max(cw * dpr, ch * dpr));
+  const pw = Math.max(1, Math.round(cw * dpr * o)), ph = Math.max(1, Math.round(ch * dpr * o));
+  if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; A.sabitVeri = null; }
+  trAracCiz();
+}
+function trAracCiz() {
+  const A = TR.arac; if (!A || !A.im || !trKutu) return;
+  const cv = trKutu.querySelector('#trCizim'), cx = cv.getContext('2d', { willReadFrequently: true }), W = cv.width, H = cv.height;
+  cx.globalAlpha = 1;
+  if (A.tur === 'boyut') {
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H);
+    const s = Math.min(W / A.im.naturalWidth, H / A.im.naturalHeight), w = A.im.naturalWidth * s, h = A.im.naturalHeight * s;
+    cx.drawImage(A.im, (W - w) / 2, (H - h) / 2, w, h);
+    return;
+  }
+  cx.drawImage(A.im, 0, 0, W, H);
+  if (A.tur === 'ayarla') {
+    if (A.ayar.p || A.ayar.k) { const im = cx.getImageData(0, 0, W, H); trAyarVeri(im.data, A.ayar); cx.putImageData(im, 0, 0); }
+    if (A.sf.cizim && A.sf.cizim.length) trCizimCiz(cx, A.sf.cizim, W, H);
+    return;
+  }
+  trCizimCiz(cx, A.cizim, W, H);
+  if (A.canli) trCizimCiz(cx, [A.canli], W, H);
+}
+function trAracCizIste() {
+  if (TR.aracRaf) return;
+  TR.aracRaf = requestAnimationFrame(() => { TR.aracRaf = 0; trAracCiz(); });
+}
+/* fırça boyu önizlemesi: kaydırıcı oynatılırken sayfanın ortasında daire */
+function trFircaGoster(kalin) {
+  const A = TR.arac, f = trKutu.querySelector('#trFirca'), cv = trKutu.querySelector('#trCizim'); if (!A || !A.im) return;
+  const d = Math.max(4, kalin * Math.min(cv.clientWidth, cv.clientHeight));
+  f.style.width = f.style.height = d + 'px';
+  f.style.left = (cv.offsetLeft + cv.clientWidth / 2 - d / 2) + 'px'; f.style.top = (cv.offsetTop + cv.clientHeight / 2 - d / 2) + 'px';
+  f.hidden = false; clearTimeout(TR.fircaT); TR.fircaT = setTimeout(() => { f.hidden = true; }, 700);
+}
+const trKalemKalin = v => 0.002 + v / 100 * 0.02;
+const trSilKalin = v => 0.008 + v / 100 * 0.09;
+function trAracBagla($k) {
+  for (const b of $k('#trAracSerit').querySelectorAll('[data-a]')) b.addEventListener('click', () => trAracAc(b.dataset.a));
+  $k('#trAracVazgec').addEventListener('click', () => trAracKapat(false));
+  $k('#trAracTamam').addEventListener('click', () => trAracKapat(true));
+  $k('#trGeri').addEventListener('click', () => { const A = TR.arac; if (!A || !A.cizim.length) return; A.ileri.push(A.cizim.pop()); trAracCizIste(); trBoya(); });
+  $k('#trIleri').addEventListener('click', () => { const A = TR.arac; if (!A || !A.ileri.length) return; A.cizim.push(A.ileri.pop()); trAracCizIste(); trBoya(); });
+  // Ayarla
+  const ayar = () => { const A = TR.arac; if (!A || A.tur !== 'ayarla') return; A.ayar = { p: +$k('#trParlak').value, k: +$k('#trKontrast').value }; trAracCizIste(); trBoya(); };
+  $k('#trParlak').addEventListener('input', ayar); $k('#trKontrast').addEventListener('input', ayar);
+  for (const id of ['#trParlak', '#trKontrast']) $k(id).addEventListener('dblclick', e => { e.target.value = 0; ayar(); });
+  // İşaretle
+  $k('#trKalemRenk').addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (!b) return; TR_FIRCA.kalemRenk = +b.dataset.r; trBoya(); });
+  $k('#trKalemBoy').addEventListener('input', e => { TR_FIRCA.kalemBoy = +e.target.value; trFircaGoster(trKalemKalin(TR_FIRCA.kalemBoy)); });
+  // Temizleme
+  for (const b of $k('[data-p="temizle"]').querySelectorAll('.tr-radyo')) b.addEventListener('click', () => { TR_FIRCA.silTur = b.dataset.r; if (TR.arac) TR.arac.damla = false; trBoya(); });
+  $k('#trSilBoy').addEventListener('input', e => { TR_FIRCA.silBoy = +e.target.value; trFircaGoster(trSilKalin(TR_FIRCA.silBoy)); });
+  $k('#trDamla').addEventListener('click', () => { const A = TR.arac; if (!A) return; A.damla = !A.damla; if (A.damla) trMesaj('Rengini almak istediğiniz yere dokunun.'); trBoya(); });
+  $k('#trSecRenk').addEventListener('click', () => {
+    const g = $k('#trRenkGir'), r = TR_FIRCA.silRenk;
+    g.value = '#' + r.map(v => v.toString(16).padStart(2, '0')).join('');
+    try { if (g.showPicker) g.showPicker(); else g.click(); } catch (e) { g.click(); }
+  });
+  $k('#trRenkGir').addEventListener('input', e => {
+    const h = e.target.value; TR_FIRCA.silRenk = [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16)); TR_FIRCA.silTur = 'secilen'; trBoya();
+  });
+  // Yeniden Boyutlandır
+  $k('#trBoyutlar').addEventListener('click', e => { const b = e.target.closest('[data-b]'); const A = TR.arac; if (!b || !A || A.tur !== 'boyut') return; A.boyut = b.dataset.b; trAracYerlestir(); trBoya(); });
+  // tuvalde çizim / silme / renk alma
+  const cv = $k('#trCizim');
+  const nokta = e => { const r = cv.getBoundingClientRect(); return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))]; };
+  cv.addEventListener('pointerdown', e => {
+    const A = TR.arac; if (!A || !A.im || (A.tur !== 'isaretle' && A.tur !== 'temizle') || A.cizen != null) return;
+    e.preventDefault();
+    try { cv.setPointerCapture(e.pointerId); } catch (h) { }
+    const p = nokta(e), cx = cv.getContext('2d', { willReadFrequently: true });
+    if (A.tur === 'temizle' && A.damla) {
+      const x = Math.round(p[0] * (cv.width - 1)), y = Math.round(p[1] * (cv.height - 1)), x0 = Math.max(0, x - 2), y0 = Math.max(0, y - 2);
+      const d = cx.getImageData(x0, y0, Math.min(5, cv.width - x0), Math.min(5, cv.height - y0)).data, t = [0, 0, 0]; let m = 0;
+      for (let i = 0; i < d.length; i += 4) { t[0] += d[i]; t[1] += d[i + 1]; t[2] += d[i + 2]; m++; }
+      TR_FIRCA.silRenk = t.map(v => Math.round(v / Math.max(1, m))); TR_FIRCA.silTur = 'secilen'; A.damla = false; trBoya();
+      return;
+    }
+    A.cizen = e.pointerId;
+    if (A.tur === 'isaretle') {
+      const r = TR_KALEM_RENK[TR_FIRCA.kalemRenk] || TR_KALEM_RENK[0];
+      A.canli = { r: r[0].slice(), a: r[1], k: trKalemKalin(TR_FIRCA.kalemBoy) * (r[1] < 1 ? 2.4 : 1), n: [p[0], p[1]] };
+    } else {
+      const k = trSilKalin(TR_FIRCA.silBoy);
+      A.canli = { r: TR_FIRCA.silRenk.slice(), a: 1, k, n: [p[0], p[1]], cevre: TR_FIRCA.silTur === 'cevre' };
+      if (A.canli.cevre) {
+        trAracCiz(); A.anlik = cx.getImageData(0, 0, cv.width, cv.height);
+        A.canli.r = trCevreRenk(A.anlik, A.canli.n, k * Math.min(cv.width, cv.height) / 2);
+      }
+    }
+    trAracCizIste();
+  });
+  const ekle = e => {
+    const A = TR.arac; if (!A || A.cizen !== e.pointerId || !A.canli) return;
+    const n = A.canli.n, ol = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+    for (const o of ol) {
+      const p = nokta(o), lx = n[n.length - 2], ly = n[n.length - 1];
+      if (Math.hypot((p[0] - lx) * cv.clientWidth, (p[1] - ly) * cv.clientHeight) < 1.5) continue;
+      n.push(+p[0].toFixed(5), +p[1].toFixed(5));
+    }
+    trAracCizIste();
+  };
+  cv.addEventListener('pointermove', ekle);
+  const bitir = e => {
+    const A = TR.arac; if (!A || A.cizen !== e.pointerId) return;
+    if (e.type === 'pointerup') ekle(e);
+    const c = A.canli; A.canli = null; A.cizen = null;
+    if (c) {
+      if (c.cevre && A.anlik) c.r = trCevreRenk(A.anlik, c.n, c.k * Math.min(cv.width, cv.height) / 2);
+      delete c.cevre;
+      A.cizim.push(c); A.ileri = [];
+    }
+    A.anlik = null;
+    trAracCizIste(); trBoya();
+  };
+  cv.addEventListener('pointerup', bitir); cv.addEventListener('pointercancel', bitir);
+}
+function trAracBoya($k) {
+  const A = TR.arac, tur = A ? A.tur : '';
+  const ekran = $k('.tr-ekran[data-e="duzen"]');
+  ekran.classList.toggle('aracmod', !!tur); ekran.dataset.arac = tur;
+  $k('#trUstAna').hidden = !!tur; $k('#trAracUst').hidden = !tur;
+  $k('#trPanel').hidden = !tur;
+  for (const p of $k('#trPanel').children) p.hidden = p.dataset.p !== tur;
+  const sf = TR.sayfalar[TR.aktif];
+  const tutuluyor = !!(TR.cizimTut && TR.cizimTut === sf && !sf.hazir);
+  $k('#trCizim').hidden = !((A && A.im) || tutuluyor);
+  $k('#trDuzenSahne').classList.toggle('tuval', !$k('#trCizim').hidden);
+  $k('#trCizim').classList.toggle('kalem', tur === 'isaretle' || tur === 'temizle');
+  if (!tur) return;
+  $k('#trAracBaslik').textContent = TR_ARAC_AD[tur] || '';
+  const cizen = tur === 'isaretle' || tur === 'temizle';
+  $k('#trGeri').hidden = $k('#trIleri').hidden = !cizen;
+  $k('#trGeri').disabled = !A.cizim.length; $k('#trIleri').disabled = !A.ileri.length;
+  if (tur === 'ayarla') { $k('#trParlakD').textContent = A.ayar.p; $k('#trKontrastD').textContent = A.ayar.k; }
+  if (tur === 'isaretle') for (const b of $k('#trKalemRenk').children) b.classList.toggle('sec', +b.dataset.r === TR_FIRCA.kalemRenk);
+  if (tur === 'temizle') {
+    for (const b of $k('[data-p="temizle"]').querySelectorAll('.tr-radyo')) b.classList.toggle('sec', b.dataset.r === TR_FIRCA.silTur);
+    $k('#trSecRenk').style.background = 'rgb(' + TR_FIRCA.silRenk.join(',') + ')';
+    $k('#trDamla').classList.toggle('etkin', !!A.damla);
+  }
+  if (tur === 'boyut') for (const b of $k('#trBoyutlar').children) b.classList.toggle('sec', b.dataset.b === A.boyut);
+}
+
 function trTemizle() {
   for (const sf of TR.sayfalar) { sf.surum = (sf.surum || 0) + 1; if (sf.sonucUrl) URL.revokeObjectURL(sf.sonucUrl); }
-  TR.sayfalar = []; TR.aktif = -1; TR.yenile = -1; TR.kirp = null; TR.sonPdf = null; TR.sonAd = ''; TR.seritAcik = false; TR.surukle = null;
+  TR.sayfalar = []; TR.aktif = -1; TR.yenile = -1; TR.kirp = null; TR.sonPdf = null; TR.sonAd = ''; TR.seritAcik = false; TR.surukle = null; TR.arac = null; TR.cizimTut = null;
   if (TR.onYuk && TR.onYuk.url) URL.revokeObjectURL(TR.onYuk.url); TR.onYuk = null;
   if (trKutu) { const s = trKutu.querySelector('#trSerit'); s.innerHTML = ''; s.dataset.son = ''; trKutu.querySelector('#trSonuc').removeAttribute('src'); }
 }
@@ -18054,7 +18722,7 @@ function trSecenekAc() {
     '#trKutu .tr-ekran{flex:1;min-height:0;display:none;flex-direction:column}' +
     '#trKutu .tr-ekran.on{display:flex}' +
     '#trKutu .tr-sahne{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}' +
-    '#trKutu video{width:100%;height:100%;object-fit:contain;background:#000}' +
+    '#trKutu video{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;background:#000}' +
     '#trKutu video[hidden]{display:none}' +
     '#trFlas{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}' +
     '#trFlas.on{animation:trFlas .35s ease-out}' +
@@ -18115,11 +18783,18 @@ function trSecenekAc() {
     '#trKutu .tr-bekle[hidden]{display:none}' +
     '#trKutu .tr-bekle i,#trKutu .tr-yuk i,#trKutu .tr-skr i{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;animation:trDon .8s linear infinite}' +
     '@keyframes trDon{to{transform:rotate(360deg)}}' +
-    '#trKutu .tr-filtre{flex:none;display:flex;gap:8px;justify-content:center;padding:10px 8px 2px;overflow-x:auto}' +
-    '#trKutu .tr-filtre button{flex:none;border:1px solid #4b5563;background:#1f2937;border-radius:16px;padding:6px 14px;font-size:13px;cursor:pointer}' +
-    '#trKutu .tr-filtre button.sec{background:#fff;color:#111827;border-color:#fff;font-weight:700}' +
-    '#trKutu .tr-arac{flex:none;display:flex;justify-content:space-around;padding:8px 4px 4px}' +
-    '#trKutu .tr-arac button{flex:1;max-width:96px;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;color:#d1d5db;cursor:pointer;padding:4px 0}' +
+    '#trKutu .tr-filtre{flex:none;display:flex;gap:12px;padding:8px 4px 4px;overflow-x:auto;scrollbar-width:none}' +
+    '#trKutu .tr-filtre::-webkit-scrollbar{display:none}' +
+    '#trKutu .tr-filtre>:first-child{margin-left:auto}#trKutu .tr-filtre>:last-child{margin-right:auto}' +
+    '#trKutu .tr-filtre button{flex:none;border:0;background:transparent;padding:0;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12.5px;color:#d1d5db;cursor:pointer}' +
+    '#trKutu .tr-filtre b{font-weight:500}' +
+    '#trKutu .tr-fk{width:66px;height:88px;border-radius:4px;background:#374151 center/cover no-repeat;border:2.5px solid transparent;box-sizing:border-box}' +
+    '#trKutu .tr-filtre button.sec .tr-fk{border-color:#3b82f6}' +
+    '#trKutu .tr-filtre button.sec b{color:#fff;font-weight:700}' +
+    '#trKutu .tr-arac{flex:none;display:flex;gap:2px;padding:8px 6px 4px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}' +
+    '#trKutu .tr-arac::-webkit-scrollbar{display:none}' +
+    '#trKutu .tr-arac>:first-child{margin-left:auto}#trKutu .tr-arac>:last-child{margin-right:auto}' +
+    '#trKutu .tr-arac button{flex:none;min-width:78px;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;color:#d1d5db;cursor:pointer;padding:4px 8px;white-space:nowrap}' +
     '#trKutu .tr-arac button:disabled{opacity:.35}' +
     '#trKutu .tr-arac svg{width:26px;height:26px}' +
     '#trKutu .tr-serit{flex:none;display:flex;gap:8px;overflow-x:auto;padding:6px 12px;min-height:84px;align-items:center;scrollbar-width:none}' +
@@ -18141,6 +18816,12 @@ function trSecenekAc() {
     '#trKutu #trDuzenSahne.kirpta .tr-kirpkat{opacity:1;pointer-events:auto}' +
     '#trKutu #trDuzenSahne #trSonuc,#trKutu #trDuzenSahne .tr-cerceve{transition:opacity .25s ease}' +
     '#trKutu #trDuzenSahne.kirpta #trSonuc,#trKutu #trDuzenSahne.kirpta .tr-cerceve{opacity:0;pointer-events:none}' +
+    // V4.8: sayfa üstünde kırpma
+    '#trKutu #trDuzenSahne.kirpta.yerinde #trSonuc{opacity:1}' +
+    '#trKutu #trDuzenSahne.yerinde .tr-kirpkat{background:transparent}' +
+    '#trKutu #trDuzenSahne.yerinde #trKaynak{display:none}' +
+    '#trKutu #trKarart{fill:rgba(15,17,21,.55)}' +
+    '#trKutu #trDuzenSahne.yerinde #trCokgen{fill:none}' +
     '#trKutu #trDuzenSahne.kirp-cikis #trCizgi,#trKutu #trDuzenSahne.kirp-cikis .tr-kenar,#trKutu #trDuzenSahne.kirp-cikis .tr-tutamak{opacity:0}' +
     '#trKutu #trDuzenSahne .tr-bekle{z-index:3}' +
     '#trKutu .tr-kirpsatir{flex:none;display:flex;align-items:center;justify-content:center;gap:10px;padding:8px 12px 2px;height:40px}' +
@@ -18149,7 +18830,40 @@ function trSecenekAc() {
     '#trKutu .tr-kirpsatir svg{width:18px;height:18px}' +
     '#trKutu .tr-kirpsatir .tr-kirptamam{background:#2563eb;font-weight:700}' +
     '#trKutu .tr-arac #trKirp.etkin{background:#2563eb;color:#fff;border-radius:10px}' +
-    '#trKutu .kirpmod .tr-filtre{opacity:.35;pointer-events:none}' +
+    // V4.6: araç ekranları
+    '#trKutu .tr-ust[hidden],#trKutu .tr-panel[hidden],#trKutu .tr-panel>[hidden]{display:none}' +
+    '#trKutu .tr-aracust .tr-baslik{text-align:left;padding-left:4px}' +
+    '#trKutu .tr-aracust .tr-ik[hidden]{display:none}' +
+    '#trKutu .tr-aracust .tr-ik:disabled{opacity:.35}' +
+    '#trKutu .tr-uygula{color:#3b82f6}#trKutu .tr-uygula svg{width:28px;height:28px;stroke-width:2.4}' +
+    '#trKutu .aracmod .tr-sayfanav,#trKutu .aracmod .tr-serit,#trKutu .aracmod .tr-arac,#trKutu .aracmod .tr-dalt,#trKutu .aracmod .tr-kirpsatir,#trKutu .aracmod .tr-cerceve{display:none !important}' +
+    '#trKutu #trCizim{position:absolute;box-shadow:0 4px 24px rgba(0,0,0,.5);background:#fff;touch-action:none;z-index:1}' +
+    '#trKutu #trCizim[hidden]{display:none}' +
+    '#trKutu #trCizim.kalem{cursor:crosshair}' +
+    '#trKutu #trDuzenSahne.tuval #trSonuc,#trKutu #trDuzenSahne.tuval .tr-cerceve{visibility:hidden}' +
+    '#trKutu #trFirca{position:absolute;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.55);pointer-events:none;z-index:2;box-sizing:border-box}' +
+    '#trKutu #trFirca[hidden]{display:none}' +
+    '#trKutu .tr-panel{flex:none;padding:4px 18px 16px;max-height:46vh;overflow-y:auto;box-sizing:border-box}' +
+    '#trKutu .tr-pb{font-size:14.5px;color:#9ca3af;margin:12px 0 8px}' +
+    '#trKutu .tr-radyo{display:flex;align-items:center;gap:14px;border:0;background:transparent;padding:10px 0;font-size:16px;cursor:pointer;text-align:left}' +
+    '#trKutu .tr-radyo i{flex:none;width:24px;height:24px;border-radius:50%;border:2px solid #9ca3af;box-sizing:border-box}' +
+    '#trKutu .tr-radyo.sec i{border:0;background:radial-gradient(circle,#fff 0 3.5px,#2f7cf6 4.5px)}' +
+    '#trKutu .tr-radyosatir{display:flex;align-items:center;gap:18px;position:relative}' +
+    '#trKutu .tr-renkkutu{flex:none;width:44px;height:44px;border-radius:6px;border:2px solid #e5e7eb;cursor:pointer;padding:0}' +
+    '#trKutu .tr-damla.etkin{background:#2563eb;color:#fff}' +
+    '#trKutu .tr-gizli{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}' +
+    '#trKutu .tr-kaydir{display:block;width:100%;height:30px;margin:0;accent-color:#e5e7eb;cursor:pointer}' +
+    '#trKutu .tr-kayar{display:flex;align-items:center;gap:12px;padding:8px 0}' +
+    '#trKutu .tr-kayar span{flex:none;width:84px;font-size:14.5px;color:#d1d5db}' +
+    '#trKutu .tr-kayar .tr-kaydir{flex:1;width:auto}' +
+    '#trKutu .tr-kayar b{flex:none;width:40px;text-align:right;font-size:13px;color:#9ca3af;font-weight:600}' +
+    '#trKutu .tr-renkler{display:flex;gap:12px;flex-wrap:wrap}' +
+    '#trKutu .tr-renkler button{width:44px;height:44px;border-radius:50%;border:2.5px solid transparent;background:transparent;padding:4px;cursor:pointer;box-sizing:border-box}' +
+    '#trKutu .tr-renkler button i{display:block;width:100%;height:100%;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}' +
+    '#trKutu .tr-renkler button.sec{border-color:#fff}' +
+    '#trKutu .tr-cipler{display:flex;flex-wrap:wrap;gap:8px}' +
+    '#trKutu .tr-cipler button{height:38px;padding:0 16px;border-radius:19px;border:1px solid #4b5563;background:#1f2937;font-size:14px;cursor:pointer}' +
+    '#trKutu .tr-cipler button.sec{background:#fff;color:#111827;border-color:#fff;font-weight:700}' +
     '#trKutu{overscroll-behavior:none}' +
     '#trKutu .tr-kenar{position:absolute;width:34px;height:12px;border-radius:4px;background:rgba(255,255,255,.75);border:2.5px solid #3b82f6;box-sizing:border-box;pointer-events:none}' +
     '#trKutu .tr-kenar.tut{background:#3b82f6}' +
@@ -18179,7 +18893,7 @@ function trSecenekAc() {
     '#trKutu .tr-sor>div{background:#1f2937;border-radius:14px;padding:18px 16px 6px;width:min(380px,100%)}' +
     '#trKutu .tr-sor p{margin:0 0 10px;line-height:1.45;font-size:14.5px}' +
     '#trKutu .tr-sor .tr-dalt{padding:8px 0 10px}' +
-    '@media (min-width:900px){#trKutu .tr-dalt,#trKutu .tr-arac,#trKutu .tr-serit{max-width:560px;margin-left:auto;margin-right:auto;width:100%;box-sizing:border-box}}';
+    '@media (min-width:900px){#trKutu .tr-dalt,#trKutu .tr-arac,#trKutu .tr-serit,#trKutu .tr-panel{max-width:560px;margin-left:auto;margin-right:auto;width:100%;box-sizing:border-box}#trKutu .tr-arac{max-width:820px}}';
   document.head.appendChild(st);
 
   const panel = (typeof MN !== 'undefined' && MN.paneller) ? MN.paneller.tum : null;
